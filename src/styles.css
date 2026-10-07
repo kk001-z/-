@@ -132,3 +132,106 @@ details p { line-height:1.65; }
   .shot-main { padding:15px; }
   .footer { flex-direction:column; gap:7px; }
 }
+
+
+.primary:disabled { opacity:.55; cursor:not-allowed; box-shadow:none; }
+.spin { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+
+.engine-hint {
+  margin-top:10px;
+  display:flex;
+  gap:8px;
+  align-items:center;
+  color:#666975;
+  font-size:11px;
+  line-height:1.5;
+}
+.engine-dot {
+  width:7px;
+  height:7px;
+  border-radius:50%;
+  background:#6f5cff;
+  box-shadow:0 0 16px rgba(111,92,255,.65);
+}
+
+.engine-status {
+  width:max-content;
+  margin-top:12px;
+  display:flex;
+  align-items:center;
+  gap:7px;
+  padding:6px 9px;
+  border-radius:999px;
+  border:1px solid #2a2c35;
+  background:#111217;
+  color:#8d8f99;
+  font-size:10px;
+  font-weight:700;
+}
+.engine-status span {
+  width:7px;
+  height:7px;
+  border-radius:50%;
+  background:#7c7f8b;
+}
+.engine-status.ai { border-color:#3b345d; color:#aaa0ff; background:#151222; }
+.engine-status.ai span { background:#7a62ff; box-shadow:0 0 12px rgba(122,98,255,.7); }
+
+.notice {
+  margin:0 0 12px;
+  padding:11px 13px;
+  border:1px solid #34313f;
+  background:#15141a;
+  color:#8b8e99;
+  border-radius:11px;
+  font-size:11px;
+  line-height:1.6;
+}
+
+.shot-brief {
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:8px;
+  margin:0 0 13px;
+}
+.shot-brief > div {
+  border:1px solid #252730;
+  background:#111217;
+  border-radius:10px;
+  padding:10px;
+}
+.shot-brief span {
+  display:block;
+  color:#626570;
+  font-size:9px;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  margin-bottom:5px;
+}
+.shot-brief p {
+  margin:0;
+  color:#a4a6af;
+  font-size:11px;
+  line-height:1.55;
+}
+
+.audio-row {
+  display:flex;
+  gap:7px;
+  flex-wrap:wrap;
+  margin-top:10px;
+}
+.audio-row span {
+  border:1px solid #282a33;
+  background:#111217;
+  color:#797c86;
+  border-radius:8px;
+  padding:7px 9px;
+  font-size:10px;
+  line-height:1.5;
+}
+
+@media (max-width: 760px) {
+  .shot-brief { grid-template-columns:1fr; }
+}
