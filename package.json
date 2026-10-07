@@ -1,7 +1,7 @@
 {
   "name": "china-ai-video-prompt-studio",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
     "dev": "concurrently -k \"npm:dev:web\" \"npm:dev:api\"",
