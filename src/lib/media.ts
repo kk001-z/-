@@ -137,13 +137,15 @@ export async function prepareVideoReference(
 
   const url = URL.createObjectURL(file)
   const video = document.createElement('video')
-  video.preload = 'metadata'
+  video.preload = 'auto'
   video.muted = true
   video.playsInline = true
-  video.src = url
 
   try {
-    await waitForEvent(video, 'loadedmetadata')
+    const ready = waitForEvent(video, 'loadeddata')
+    video.src = url
+    video.load()
+    await ready
 
     if (!video.videoWidth || !video.videoHeight || !Number.isFinite(video.duration)) {
       throw new Error('无法读取视频尺寸或时长。')
