@@ -1,4 +1,9 @@
-import { analyze, type AnalysisResult, type InputMode } from './promptEngine'
+import {
+  analyze,
+  applyGlobalLocks,
+  type AnalysisResult,
+  type InputMode,
+} from './promptEngine'
 import type { PlatformId } from './modelCatalog'
 import type { PreparedReference } from './media'
 
@@ -13,12 +18,13 @@ export async function analyzeWithDirector(
   input: string,
   mode: InputMode,
   platform: PlatformId,
+  locks = '',
 ): Promise<DirectorResponse> {
   try {
     const response = await fetch('/api/director', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ input, mode, platform }),
+      body: JSON.stringify({ input, mode, platform, locks }),
     })
 
     if (response.ok) {
@@ -40,7 +46,7 @@ export async function analyzeWithDirector(
   }
 
   return {
-    result: analyze(input, mode, platform),
+    result: applyGlobalLocks(analyze(input, mode, platform), locks, platform),
     engine: 'local',
     notice: '当前使用本地演示引擎。配置服务端 AI 密钥后会自动启用真正的 AI Director。',
   }
@@ -50,6 +56,7 @@ export async function analyzeReferenceWithDirector(
   reference: PreparedReference,
   platform: PlatformId,
   context = '',
+  locks = '',
 ): Promise<DirectorResponse> {
   const response = await fetch('/api/reverse', {
     method: 'POST',
@@ -63,6 +70,7 @@ export async function analyzeReferenceWithDirector(
       images: reference.frames,
       platform,
       context,
+      locks,
     }),
   })
 
