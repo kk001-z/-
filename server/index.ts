@@ -14,19 +14,66 @@ const app = express()
 const port = Number(process.env.DIRECTOR_PORT ?? 8787)
 
 app.use(cors())
-app.use(express.json({ limit: '2mb' }))
+app.use(express.json({ limit: '30mb' }))
 
 const platformIds = new Set(platforms.map((item) => item.id))
+
+const directorSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    title: { type: 'string' },
+    summary: { type: 'string' },
+    reason: { type: 'string' },
+    shots: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 12,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          title: { type: 'string' },
+          source: { type: 'string' },
+          duration: { type: 'integer', minimum: 1, maximum: 12 },
+          framing: { type: 'string' },
+          camera: { type: 'string' },
+          emotion: { type: 'string' },
+          subject: { type: 'string' },
+          action: { type: 'string' },
+          environment: { type: 'string' },
+          lighting: { type: 'string' },
+          continuity: { type: 'string' },
+          dialogue: { type: 'string' },
+          sound: { type: 'string' },
+        },
+        required: [
+          'title',
+          'source',
+          'duration',
+          'framing',
+          'camera',
+          'emotion',
+          'subject',
+          'action',
+          'environment',
+          'lighting',
+          'continuity',
+          'dialogue',
+          'sound',
+        ],
+      },
+    },
+  },
+  required: ['title', 'summary', 'reason', 'shots'],
+} as const
 
 function isPlatformId(value: unknown): value is PlatformId {
   return typeof value === 'string' && platformIds.has(value as PlatformId)
 }
 
-function stripCodeFence(value: string) {
-  return value
-    .replace(/^\s*```(?:json)?\s*/i, '')
-    .replace(/\s*```\s*$/i, '')
-    .trim()
+function isImageDataUrl(value: unknown): value is string {
+  return typeof value === 'string' && /^data:image\/(jpeg|jpg|png|webp);base64,/i.test(value)
 }
 
 function asText(value: unknown, fallback = '') {
@@ -61,7 +108,7 @@ function normalizeShot(raw: Record<string, unknown>, index: number): DirectorSho
 
 function normalizePlan(
   raw: Record<string, unknown>,
-  mode: InputMode,
+  mode: InputMode | 'reference-image' | 'reference-video',
   platform: PlatformId,
 ): DirectorPlan {
   const rawShots = Array.isArray(raw.shots) ? raw.shots : []
@@ -75,15 +122,34 @@ function normalizePlan(
   }
 
   const platformInfo = platforms.find((item) => item.id === platform)!
+  const defaultTitle =
+    mode === 'script'
+      ? 'AI 剧本分镜方案'
+      : mode === 'reference-image'
+        ? '参考图反推方案'
+        : mode === 'reference-video'
+          ? '参考视频反推方案'
+          : 'AI 画面导演方案'
 
   return {
-    title: asText(raw.title, mode === 'script' ? 'AI 剧本分镜方案' : 'AI 画面导演方案'),
+    title: asText(raw.title, defaultTitle),
     summary: asText(raw.summary, `AI 已设计 ${shots.length} 个可生成镜头。`),
     totalDuration: shots.reduce((sum, shot) => sum + shot.duration, 0),
     recommendedPlatform: platform,
     recommendedModel: platformInfo.models[0],
     reason: asText(raw.reason, platformInfo.specialty),
     shots,
+  }
+}
+
+function structuredTextFormat() {
+  return {
+    format: {
+      type: 'json_schema' as const,
+      name: 'framepilot_director_plan',
+      strict: true,
+      schema: directorSchema,
+    },
   }
 }
 
@@ -104,34 +170,56 @@ function directorInstructions(platform: PlatformId, mode: InputMode) {
 3. 景别、机位、运镜必须服务于剧情，不要每个镜头都推拉摇移。
 4. 有对白时要区分说话者和听者反应，必要时设计反打或近景。
 5. 有产品时，优先保证产品结构、Logo、颜色和关键材质连续一致。
-6. 需要从图生视频时，动作设计要从首帧已经存在什么出发，避免重复描述静态外观。
-7. 所有镜头都必须考虑前后连续性，明确人物位置、视线方向、动作接续和场景关系。
-8. 中文输出，专业但简洁，不写空洞的画质堆词。
-
-只返回严格 JSON，不要 Markdown，不要解释。JSON 结构：
-{
-  "title": "方案标题",
-  "summary": "一句话导演策略",
-  "reason": "为什么这个模型适合",
-  "shots": [
-    {
-      "title": "镜头名称",
-      "source": "这个镜头承接的原始剧情或意图",
-      "duration": 3,
-      "framing": "景别和机位",
-      "camera": "运镜",
-      "emotion": "情绪",
-      "subject": "主体与关键外观",
-      "action": "镜头内实际发生的动作",
-      "environment": "环境与空间",
-      "lighting": "光线与时间",
-      "continuity": "与前后镜头必须锁定的连续性",
-      "dialogue": "对白，没有就空字符串",
-      "sound": "环境音、动作音或音乐建议，没有就空字符串"
-    }
-  ]
-}
+6. 图生视频 Prompt 应从首帧已经存在的内容出发，重点描述运动、演变和镜头，不重复堆砌静态外观。
+7. 所有镜头都要考虑人物位置、视线方向、动作接续和场景关系。
+8. 输出专业、具体、可执行的中文导演描述，不写空洞画质堆词。
 `.trim()
+}
+
+function reverseInstructions(
+  platform: PlatformId,
+  kind: 'image' | 'video',
+  context: string,
+  duration?: number,
+) {
+  const platformInfo = platforms.find((item) => item.id === platform)!
+  const extraContext = context.trim() ? `用户补充目的：${context.trim()}` : '用户没有补充文字目的。'
+  const durationText =
+    kind === 'video' && duration && Number.isFinite(duration)
+      ? `原视频时长约 ${duration.toFixed(1)} 秒。`
+      : ''
+
+  return `
+你是一名资深影视导演、摄影指导和 AI 视频 Prompt Engineer。你会看到${kind === 'image' ? '一张参考图片' : '按时间顺序抽取的一组视频关键帧'}。
+
+你的目标不是泛泛描述素材，而是“反推它是怎么被拍出来/应该怎么被生成出来”，然后把分析编译成可用于 ${platformInfo.name}（默认模型：${platformInfo.models[0]}）的镜头方案。
+
+${durationText}
+${extraContext}
+
+必须完成：
+1. 识别主体：人物、产品、道具、服装、材质、明显文字或 Logo。看不清的内容不要猜。
+2. 反推画面：场景、构图、景别、机位、光线方向、时间氛围、色彩和质感。
+3. ${kind === 'video' ? '根据关键帧之间的变化反推人物动作、镜头运动、节奏和可能的转场；无法仅凭关键帧确认的运镜要保守描述。' : '为这张静态图设计最合理的图生视频运动方案：区分主体运动、环境微运动和镜头运动，避免破坏原图结构。'}
+4. 如果素材明显包含多个镜头/场景，拆成多个 shot；否则不要强行拆镜。
+5. subject 要写清楚“哪些外观特征必须被锁定”；continuity 要明确哪些东西不能漂移。
+6. action 只描述镜头里真正会发生的变化，不要把整张图片重新复述一遍。
+7. framing 和 camera 必须具体，例如“胸像近景，略低机位”“缓慢 dolly-in 约 8%”，不要只写“电影运镜”。
+8. 产品素材必须优先锁定产品结构、比例、颜色、Logo、接口和材质。
+9. 输出中文，直接可用于创作，不写解释性废话。
+`.trim()
+}
+
+function parseStructuredOutput(text: string) {
+  const start = text.indexOf('{')
+  const end = text.lastIndexOf('}')
+  const json = start >= 0 && end >= start ? text.slice(start, end + 1) : text
+  return JSON.parse(json) as Record<string, unknown>
+}
+
+function createClient() {
+  if (!process.env.OPENAI_API_KEY) return null
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 }
 
 app.get('/api/health', (_request, response) => {
@@ -139,6 +227,11 @@ app.get('/api/health', (_request, response) => {
     ok: true,
     aiConfigured: Boolean(process.env.OPENAI_API_KEY),
     model: process.env.OPENAI_MODEL ?? 'gpt-6-luna',
+    capabilities: {
+      textDirector: true,
+      imageReverse: true,
+      videoKeyframeReverse: true,
+    },
   })
 })
 
@@ -160,7 +253,8 @@ app.post('/api/director', async (request, response) => {
     return
   }
 
-  if (!process.env.OPENAI_API_KEY) {
+  const client = createClient()
+  if (!client) {
     response.status(503).json({
       error: 'AI_NOT_CONFIGURED',
       message: 'AI key is not configured; frontend can use local fallback.',
@@ -169,15 +263,14 @@ app.post('/api/director', async (request, response) => {
   }
 
   try {
-    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
     const result = await client.responses.create({
       model: process.env.OPENAI_MODEL ?? 'gpt-6-luna',
       instructions: directorInstructions(platform, mode),
       input: input.trim(),
+      text: structuredTextFormat(),
     })
 
-    const rawText = stripCodeFence(result.output_text)
-    const parsed = JSON.parse(rawText) as Record<string, unknown>
+    const parsed = parseStructuredOutput(result.output_text)
     const plan = normalizePlan(parsed, mode, platform)
     const compiled = compileDirectorPlan(plan, platform)
 
@@ -191,6 +284,98 @@ app.post('/api/director', async (request, response) => {
     response.status(500).json({
       error: 'DIRECTOR_FAILED',
       message: error instanceof Error ? error.message : 'AI director failed',
+    })
+  }
+})
+
+app.post('/api/reverse', async (request, response) => {
+  const {
+    kind,
+    images,
+    platform,
+    context = '',
+    duration,
+    width,
+    height,
+    name = '',
+  } = request.body ?? {}
+
+  if (kind !== 'image' && kind !== 'video') {
+    response.status(400).json({ error: 'kind must be image or video' })
+    return
+  }
+
+  if (!isPlatformId(platform)) {
+    response.status(400).json({ error: 'invalid platform' })
+    return
+  }
+
+  if (!Array.isArray(images) || !images.length || images.length > 8 || !images.every(isImageDataUrl)) {
+    response.status(400).json({ error: 'images must contain 1-8 valid image data URLs' })
+    return
+  }
+
+  const client = createClient()
+  if (!client) {
+    response.status(503).json({
+      error: 'AI_NOT_CONFIGURED',
+      message: 'Reference reverse analysis requires a vision-capable AI model.',
+    })
+    return
+  }
+
+  try {
+    const metadata = [
+      name ? `文件名：${name}` : '',
+      Number.isFinite(width) && Number.isFinite(height) ? `原始尺寸：${width}×${height}` : '',
+      kind === 'video' && Number.isFinite(duration) ? `原视频时长：${Number(duration).toFixed(1)} 秒` : '',
+      kind === 'video' ? `关键帧数量：${images.length}，按时间顺序排列` : '',
+    ].filter(Boolean).join('；')
+
+    const visualContent = images.map((imageUrl: string) => ({
+      type: 'input_image' as const,
+      image_url: imageUrl,
+      detail: kind === 'image' ? ('high' as const) : ('low' as const),
+    }))
+
+    const result = await client.responses.create({
+      model: process.env.OPENAI_MODEL ?? 'gpt-6-luna',
+      instructions: reverseInstructions(platform, kind, asText(context), Number(duration)),
+      input: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'input_text' as const,
+              text: `请按提供顺序分析这些视觉素材。素材信息：${metadata || '无额外元数据'}。`,
+            },
+            ...visualContent,
+          ],
+        },
+      ],
+      text: structuredTextFormat(),
+    })
+
+    const parsed = parseStructuredOutput(result.output_text)
+    const mode = kind === 'image' ? 'reference-image' : 'reference-video'
+    const plan = normalizePlan(parsed, mode, platform)
+    const compiled = compileDirectorPlan(plan, platform)
+
+    response.json({
+      engine: 'ai',
+      model: process.env.OPENAI_MODEL ?? 'gpt-6-luna',
+      result: compiled,
+      source: {
+        kind,
+        frameCount: images.length,
+        duration: kind === 'video' && Number.isFinite(duration) ? Number(duration) : null,
+      },
+    })
+  } catch (error) {
+    console.error(error)
+    response.status(500).json({
+      error: 'REVERSE_FAILED',
+      message: error instanceof Error ? error.message : 'Reference reverse analysis failed',
     })
   }
 })
