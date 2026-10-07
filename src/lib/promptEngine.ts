@@ -237,3 +237,40 @@ export function analyze(input: string, mode: InputMode, targetPlatform?: Platfor
     recommendedPlatform,
   )
 }
+
+
+export function recompileAnalysisResult(
+  result: AnalysisResult,
+  targetPlatform: PlatformId,
+): AnalysisResult {
+  const platformInfo = platforms.find((item) => item.id === targetPlatform)!
+  const shots: DirectorShot[] = result.shots.map((shot) => ({
+    id: shot.id,
+    title: shot.title,
+    source: shot.source,
+    duration: shot.duration,
+    framing: shot.framing,
+    camera: shot.camera,
+    emotion: shot.emotion,
+    subject: shot.subject,
+    action: shot.action,
+    environment: shot.environment,
+    lighting: shot.lighting,
+    continuity: shot.continuity,
+    dialogue: shot.dialogue,
+    sound: shot.sound,
+  }))
+
+  return compileDirectorPlan(
+    {
+      title: result.title,
+      summary: result.summary,
+      totalDuration: result.totalDuration,
+      recommendedPlatform: targetPlatform,
+      recommendedModel: platformInfo.models[0],
+      reason: platformInfo.specialty,
+      shots,
+    },
+    targetPlatform,
+  )
+}
