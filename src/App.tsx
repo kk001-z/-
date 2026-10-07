@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import {
   ArrowRight,
   Check,
@@ -8,24 +8,37 @@ import {
   FileText,
   Film,
   ImagePlus,
+  Images,
   Layers3,
   LoaderCircle,
   Play,
+  ScanSearch,
   Sparkles,
+  Upload,
   WandSparkles,
+  X,
 } from 'lucide-react'
-import { AnalysisResult, InputMode } from './lib/promptEngine'
-import { analyzeWithDirector } from './lib/directorApi'
-import { defaultPlatform, PlatformId, platforms } from './lib/modelCatalog'
+import { type AnalysisResult, type InputMode } from './lib/promptEngine'
+import { analyzeReferenceWithDirector, analyzeWithDirector } from './lib/directorApi'
+import { defaultPlatform, type PlatformId, platforms } from './lib/modelCatalog'
+import {
+  formatBytes,
+  formatDuration,
+  prepareReference,
+  type PreparedReference,
+} from './lib/media'
+
+type WorkspaceMode = InputMode | 'reference'
 
 const ideaExample = '一个女生坐在车里，看着窗外下雨。她抬手擦去车窗上的雾气，看到远处霓虹灯。镜头从侧面慢慢推进，最后停在她的眼神特写。'
 const scriptExample = `镜头一：男生走进河边钓位，看见朋友靠在钓箱上闭着眼。
 男生：“你不是来钓鱼的吗？”
 朋友睁眼看他：“鱼不上班，我先下班。”
 最后给钓箱靠背和坐垫一个产品特写。`
+const referenceExample = '例如：重点复刻这个视频的运镜和节奏，但把主体替换成我的产品。'
 
 function App() {
-  const [mode, setMode] = useState<InputMode>('idea')
+  const [mode, setMode] = useState<WorkspaceMode>('idea')
   const [platform, setPlatform] = useState<PlatformId>(defaultPlatform)
   const [input, setInput] = useState(ideaExample)
   const [result, setResult] = useState<AnalysisResult | null>(null)
@@ -34,25 +47,41 @@ function App() {
   const [engine, setEngine] = useState<'ai' | 'local' | null>(null)
   const [engineModel, setEngineModel] = useState('')
   const [notice, setNotice] = useState('')
+  const [reference, setReference] = useState<PreparedReference | null>(null)
+  const [preparingReference, setPreparingReference] = useState(false)
+  const [referenceProgress, setReferenceProgress] = useState('')
+  const [dragActive, setDragActive] = useState(false)
+  const imageInputRef = useRef<HTMLInputElement>(null)
+  const videoInputRef = useRef<HTMLInputElement>(null)
 
   const currentPlatform = useMemo(
     () => platforms.find((item) => item.id === platform)!,
     [platform],
   )
 
+  const canRun = mode === 'reference' ? Boolean(reference) : Boolean(input.trim())
+
   async function runAnalysis() {
-    if (!input.trim() || loading) return
+    if (!canRun || loading || preparingReference) return
 
     setLoading(true)
     setNotice('')
 
     try {
-      const response = await analyzeWithDirector(input, mode, platform)
+      const response =
+        mode === 'reference' && reference
+          ? await analyzeReferenceWithDirector(reference, platform, input.trim())
+          : await analyzeWithDirector(input, mode as InputMode, platform)
+
       setResult(response.result)
       setEngine(response.engine)
       setEngineModel(response.model ?? '')
       setNotice(response.notice ?? '')
       setTimeout(() => document.getElementById('result')?.scrollIntoView({ behavior: 'smooth' }), 80)
+    } catch (error) {
+      setResult(null)
+      setEngine(null)
+      setNotice(error instanceof Error ? error.message : '分析失败，请稍后重试。')
     } finally {
       setLoading(false)
     }
@@ -64,12 +93,55 @@ function App() {
     setTimeout(() => setCopied(''), 1200)
   }
 
-  function changeMode(next: InputMode) {
+  function changeMode(next: WorkspaceMode) {
     setMode(next)
-    setInput(next === 'idea' ? ideaExample : scriptExample)
     setResult(null)
     setEngine(null)
     setNotice('')
+
+    if (next === 'idea') setInput(ideaExample)
+    if (next === 'script') setInput(scriptExample)
+    if (next === 'reference') setInput('')
+  }
+
+  async function handleReferenceFile(file?: File) {
+    if (!file) return
+
+    setPreparingReference(true)
+    setReferenceProgress(file.type.startsWith('video/') ? '正在读取视频…' : '正在优化图片…')
+    setNotice('')
+    setResult(null)
+
+    try {
+      const prepared = await prepareReference(file, (current, total) => {
+        setReferenceProgress(`正在抽取关键帧 ${current}/${total}`)
+      })
+      setReference(prepared)
+      setReferenceProgress('')
+      setMode('reference')
+    } catch (error) {
+      setReference(null)
+      setReferenceProgress('')
+      setNotice(error instanceof Error ? error.message : '参考素材处理失败。')
+    } finally {
+      setPreparingReference(false)
+      if (imageInputRef.current) imageInputRef.current.value = ''
+      if (videoInputRef.current) videoInputRef.current.value = ''
+    }
+  }
+
+  function clearReference() {
+    setReference(null)
+    setResult(null)
+    setEngine(null)
+    setNotice('')
+  }
+
+  function handleDrop(event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault()
+    setDragActive(false)
+    const file = event.dataTransfer.files?.[0]
+    if (file) void handleReferenceFile(file)
   }
 
   return (
@@ -80,47 +152,118 @@ function App() {
           <span>FramePilot</span>
           <span className="beta">CN · VIDEO AI</span>
         </div>
-        <div className="nav-note">AI 导演 · 分镜 · Prompt Adapter</div>
+        <div className="nav-note">AI 导演 · 分镜 · Reverse Prompt · Prompt Adapter</div>
       </header>
 
       <section className="hero shell">
-        <div className="eyebrow"><Sparkles size={14} /> 把“人话”编译成 AI 视频生成方案</div>
+        <div className="eyebrow"><Sparkles size={14} /> 把“人话”和参考素材编译成 AI 视频方案</div>
         <h1>你负责想象，<br /><span>剩下的交给 AI 导演。</span></h1>
         <p className="hero-copy">
-          描述一个画面，或者直接粘贴剧本。系统自动拆镜、判断景别与运镜，
+          描述画面、粘贴剧本，或者直接上传参考图与参考视频。系统自动拆镜、反推画面与运镜，
           再转换成小云雀、即梦、可灵、LibTV、Vidu、海螺与万相可用的提示词。
         </p>
       </section>
 
       <section className="workspace shell">
         <div className="composer card">
-          <div className="mode-tabs">
+          <div className="mode-tabs mode-tabs-three">
             <button className={mode === 'idea' ? 'active' : ''} onClick={() => changeMode('idea')}>
               <WandSparkles size={16} /> 我有一个画面
             </button>
             <button className={mode === 'script' ? 'active' : ''} onClick={() => changeMode('script')}>
               <FileText size={16} /> 我有一段剧本
             </button>
+            <button className={mode === 'reference' ? 'active' : ''} onClick={() => changeMode('reference')}>
+              <ScanSearch size={16} /> 参考素材反推
+            </button>
           </div>
 
-          <div className="field-head">
-            <label>{mode === 'idea' ? '告诉导演你想看到什么' : '粘贴你的剧本 / 文案 / 分镜草稿'}</label>
-            <span>{input.length} 字</span>
-          </div>
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="例如：一个男生在雨夜骑摩托穿过城市，镜头贴近车身低机位跟拍……"
+          {mode !== 'reference' ? (
+            <>
+              <div className="field-head">
+                <label>{mode === 'idea' ? '告诉导演你想看到什么' : '粘贴你的剧本 / 文案 / 分镜草稿'}</label>
+                <span>{input.length} 字</span>
+              </div>
+              <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="例如：一个男生在雨夜骑摩托穿过城市，镜头贴近车身低机位跟拍……"
+              />
+
+              <div className="upload-row">
+                <button className="ghost" onClick={() => imageInputRef.current?.click()}>
+                  <ImagePlus size={16} /> 添加参考图 <span>可直接反推</span>
+                </button>
+                <button className="ghost" onClick={() => videoInputRef.current?.click()}>
+                  <Film size={16} /> 添加参考视频 <span>自动抽帧</span>
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="field-head">
+                <label>上传你想反推的图片或视频</label>
+                <span>视频会在本地抽关键帧</span>
+              </div>
+
+              {!reference ? (
+                <div
+                  className={dragActive ? 'drop-zone active' : 'drop-zone'}
+                  onDragEnter={(event) => {
+                    event.preventDefault()
+                    setDragActive(true)
+                  }}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDragLeave={() => setDragActive(false)}
+                  onDrop={handleDrop}
+                >
+                  <div className="drop-icon"><Upload size={22} /></div>
+                  <strong>{preparingReference ? referenceProgress : '拖入参考图 / 参考视频'}</strong>
+                  <p>图片直接视觉反推；视频自动抽取 4–7 张关键帧，不上传整段视频。</p>
+                  <div className="drop-actions">
+                    <button onClick={() => imageInputRef.current?.click()} disabled={preparingReference}>
+                      <ImagePlus size={15} /> 选择图片
+                    </button>
+                    <button onClick={() => videoInputRef.current?.click()} disabled={preparingReference}>
+                      <Film size={15} /> 选择视频
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <ReferencePreview reference={reference} onClear={clearReference} />
+              )}
+
+              <div className="field-head reference-context-title">
+                <label>你希望重点反推什么？</label>
+                <span>可选</span>
+              </div>
+              <textarea
+                className="reference-context"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder={referenceExample}
+              />
+            </>
+          )}
+
+          <input
+            ref={imageInputRef}
+            hidden
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            onChange={(event) => void handleReferenceFile(event.target.files?.[0])}
           />
-
-          <div className="upload-row">
-            <button className="ghost"><ImagePlus size={16} /> 添加参考图 <span>V0.3</span></button>
-            <button className="ghost"><Film size={16} /> 添加参考视频 <span>V0.3</span></button>
-          </div>
+          <input
+            ref={videoInputRef}
+            hidden
+            type="file"
+            accept="video/mp4,video/quicktime,video/webm,video/*"
+            onChange={(event) => void handleReferenceFile(event.target.files?.[0])}
+          />
 
           <div className="field-head platform-title">
             <label>输出到哪个平台？</label>
-            <span>平台决定提示词写法</span>
+            <span>平台决定最终 Prompt 写法</span>
           </div>
 
           <div className="platform-grid">
@@ -144,25 +287,47 @@ function App() {
             <ChevronDown size={18} />
           </div>
 
-          <button className="primary" onClick={runAnalysis} disabled={loading || !input.trim()}>
-            {loading ? <LoaderCircle className="spin" size={18} /> : <Sparkles size={18} />}
-            {loading ? 'AI 导演正在拆镜…' : 'AI 导演分析'}
-            {!loading && <ArrowRight size={18} />}
+          <button className="primary" onClick={runAnalysis} disabled={loading || preparingReference || !canRun}>
+            {loading || preparingReference ? <LoaderCircle className="spin" size={18} /> : <Sparkles size={18} />}
+            {preparingReference
+              ? referenceProgress || '正在处理素材…'
+              : loading
+                ? mode === 'reference' ? 'AI 正在反推素材…' : 'AI 导演正在拆镜…'
+                : mode === 'reference' ? '开始反推参考素材' : 'AI 导演分析'}
+            {!loading && !preparingReference && <ArrowRight size={18} />}
           </button>
 
           <div className="engine-hint">
             <span className="engine-dot" />
-            已支持 AI Director；未配置服务端密钥时自动使用本地演示引擎。
+            文本模式支持本地回退；图片 / 视频反推需要配置服务端视觉 AI。
           </div>
+
+          {notice && !result && <div className="notice composer-notice">{notice}</div>}
         </div>
 
         <aside className="side card">
-          <div className="side-title"><Layers3 size={18} /> 它会替你做什么？</div>
-          <div className="step"><span>01</span><div><strong>理解内容</strong><p>找出人物、场景、动作、产品、对白与情绪。</p></div></div>
-          <div className="step"><span>02</span><div><strong>导演拆镜</strong><p>按视觉事件和情绪转折拆镜，而不是机械按句号切。</p></div></div>
-          <div className="step"><span>03</span><div><strong>连续性锁定</strong><p>锁定人物身份、服装、产品结构、位置与视线关系。</p></div></div>
-          <div className="step"><span>04</span><div><strong>首帧 + 视频 Prompt</strong><p>每镜同时产出首帧和图生视频指令。</p></div></div>
-          <div className="step"><span>05</span><div><strong>平台适配</strong><p>同一镜头自动编译成不同平台偏好的语言。</p></div></div>
+          <div className="side-title">
+            {mode === 'reference' ? <ScanSearch size={18} /> : <Layers3 size={18} />}
+            {mode === 'reference' ? '反推模式会做什么？' : 'AI 导演会替你做什么？'}
+          </div>
+
+          {mode === 'reference' ? (
+            <>
+              <div className="step"><span>01</span><div><strong>读取视觉素材</strong><p>识别人物、产品、场景、构图、材质与明显文字。</p></div></div>
+              <div className="step"><span>02</span><div><strong>视频关键帧分析</strong><p>按时间顺序比较关键帧，判断动作、节奏和场景变化。</p></div></div>
+              <div className="step"><span>03</span><div><strong>反推摄影语言</strong><p>估计景别、机位、光线与可确认的运镜，不强行猜测。</p></div></div>
+              <div className="step"><span>04</span><div><strong>锁定不可漂移元素</strong><p>人物身份、服装、产品结构、Logo、颜色和空间关系。</p></div></div>
+              <div className="step"><span>05</span><div><strong>编译目标平台 Prompt</strong><p>把反推结果转换成 Seedance、Kling、Vidu 等可直接使用的语言。</p></div></div>
+            </>
+          ) : (
+            <>
+              <div className="step"><span>01</span><div><strong>理解内容</strong><p>找出人物、场景、动作、产品、对白与情绪。</p></div></div>
+              <div className="step"><span>02</span><div><strong>导演拆镜</strong><p>按视觉事件和情绪转折拆镜，而不是机械按句号切。</p></div></div>
+              <div className="step"><span>03</span><div><strong>连续性锁定</strong><p>锁定人物身份、服装、产品结构、位置与视线关系。</p></div></div>
+              <div className="step"><span>04</span><div><strong>首帧 + 视频 Prompt</strong><p>每镜同时产出首帧和图生视频指令。</p></div></div>
+              <div className="step"><span>05</span><div><strong>平台适配</strong><p>同一镜头自动编译成不同平台偏好的语言。</p></div></div>
+            </>
+          )}
         </aside>
       </section>
 
@@ -170,13 +335,16 @@ function App() {
         <section className="results shell" id="result">
           <div className="result-head">
             <div>
-              <div className="eyebrow"><Check size={14} /> DIRECTOR ANALYSIS COMPLETE</div>
+              <div className="eyebrow">
+                <Check size={14} />
+                {mode === 'reference' ? 'REFERENCE REVERSE COMPLETE' : 'DIRECTOR ANALYSIS COMPLETE'}
+              </div>
               <h2>{result.title}</h2>
               <p>{result.summary}</p>
               <div className={engine === 'ai' ? 'engine-status ai' : 'engine-status local'}>
                 <span />
                 {engine === 'ai'
-                  ? `AI Director · ${engineModel || 'Responses API'}`
+                  ? `AI Vision Director · ${engineModel || 'Responses API'}`
                   : 'Local Director · 演示回退模式'}
               </div>
             </div>
@@ -225,7 +393,7 @@ function App() {
                   </div>
 
                   <PromptBlock
-                    title="首帧 / 文生图 Prompt"
+                    title={mode === 'reference' ? '反推首帧 / 文生图 Prompt' : '首帧 / 文生图 Prompt'}
                     value={shot.firstFramePrompt}
                     copyKey={`frame-${shot.id}`}
                     copied={copied}
@@ -259,10 +427,46 @@ function App() {
       )}
 
       <footer className="shell footer">
-        <span>FramePilot V0.2</span>
-        <span>中国 AI 视频创作者的 Director + Prompt Compiler</span>
+        <span>FramePilot V0.3</span>
+        <span>中国 AI 视频创作者的 Director + Reverse Prompt + Prompt Compiler</span>
       </footer>
     </main>
+  )
+}
+
+function ReferencePreview({
+  reference,
+  onClear,
+}: {
+  reference: PreparedReference
+  onClear: () => void
+}) {
+  return (
+    <div className="reference-preview">
+      <div className="reference-preview-head">
+        <div>
+          <span>{reference.kind === 'image' ? '参考图片' : '参考视频 · 已抽关键帧'}</span>
+          <strong>{reference.name}</strong>
+        </div>
+        <button onClick={onClear} aria-label="移除参考素材"><X size={16} /></button>
+      </div>
+
+      <div className={reference.kind === 'image' ? 'reference-frames single' : 'reference-frames'}>
+        {reference.frames.map((frame, index) => (
+          <div className="reference-frame" key={index}>
+            <img src={frame} alt={reference.kind === 'video' ? `关键帧 ${index + 1}` : '参考图'} />
+            {reference.kind === 'video' && <span>{String(index + 1).padStart(2, '0')}</span>}
+          </div>
+        ))}
+      </div>
+
+      <div className="reference-meta">
+        <span>{formatBytes(reference.size)}</span>
+        {reference.width && reference.height && <span>{reference.width} × {reference.height}</span>}
+        {reference.duration && <span>{formatDuration(reference.duration)}</span>}
+        <span><Images size={12} /> {reference.frames.length} {reference.kind === 'video' ? '关键帧' : '视觉输入'}</span>
+      </div>
+    </div>
   )
 }
 
