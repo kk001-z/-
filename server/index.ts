@@ -142,6 +142,21 @@ function normalizePlan(
   }
 }
 
+function applyLocksToPlan(plan: DirectorPlan, locks: string) {
+  const normalized = locks.trim()
+  if (!normalized) return plan
+
+  return {
+    ...plan,
+    shots: plan.shots.map((shot) => ({
+      ...shot,
+      continuity: shot.continuity.includes(normalized)
+        ? shot.continuity
+        : `${shot.continuity}；全局一致性锁：${normalized}`,
+    })),
+  }
+}
+
 function structuredTextFormat() {
   return {
     format: {
@@ -153,8 +168,11 @@ function structuredTextFormat() {
   }
 }
 
-function directorInstructions(platform: PlatformId, mode: InputMode) {
+function directorInstructions(platform: PlatformId, mode: InputMode, locks = '') {
   const platformInfo = platforms.find((item) => item.id === platform)!
+  const lockText = locks.trim()
+    ? `\n全局一致性锁（所有镜头必须执行）：${locks.trim()}\n`
+    : ''
 
   return `
 你是一名面向中国 AI 视频生成工具的资深导演、分镜师和 Prompt Engineer。
@@ -163,7 +181,7 @@ function directorInstructions(platform: PlatformId, mode: InputMode) {
 目标平台：${platformInfo.name}
 默认模型：${platformInfo.models[0]}
 平台强项：${platformInfo.specialty}
-
+${lockText}
 导演原则：
 1. 不要机械按句号拆镜。按照视觉事件、动作完成度、情绪转折、对白反应和产品展示目的拆镜。
 2. 每个镜头只承担一个主要视觉任务，通常 2-5 秒；必要时可到 8-10 秒。
@@ -181,6 +199,7 @@ function reverseInstructions(
   kind: 'image' | 'video',
   context: string,
   duration?: number,
+  locks = '',
 ) {
   const platformInfo = platforms.find((item) => item.id === platform)!
   const extraContext = context.trim() ? `用户补充目的：${context.trim()}` : '用户没有补充文字目的。'
@@ -188,6 +207,9 @@ function reverseInstructions(
     kind === 'video' && duration && Number.isFinite(duration)
       ? `原视频时长约 ${duration.toFixed(1)} 秒。`
       : ''
+  const lockText = locks.trim()
+    ? `全局一致性锁（反推后所有 shot 都必须保留）：${locks.trim()}`
+    : '用户没有额外设置全局一致性锁。'
 
   return `
 你是一名资深影视导演、摄影指导和 AI 视频 Prompt Engineer。你会看到${kind === 'image' ? '一张参考图片' : '按时间顺序抽取的一组视频关键帧'}。
@@ -196,6 +218,7 @@ function reverseInstructions(
 
 ${durationText}
 ${extraContext}
+${lockText}
 
 必须完成：
 1. 识别主体：人物、产品、道具、服装、材质、明显文字或 Logo。看不清的内容不要猜。
@@ -236,7 +259,7 @@ app.get('/api/health', (_request, response) => {
 })
 
 app.post('/api/director', async (request, response) => {
-  const { input, mode, platform } = request.body ?? {}
+  const { input, mode, platform, locks = '' } = request.body ?? {}
 
   if (typeof input !== 'string' || !input.trim()) {
     response.status(400).json({ error: 'input is required' })
@@ -265,13 +288,13 @@ app.post('/api/director', async (request, response) => {
   try {
     const result = await client.responses.create({
       model: process.env.OPENAI_MODEL ?? 'gpt-6-luna',
-      instructions: directorInstructions(platform, mode),
+      instructions: directorInstructions(platform, mode, asText(locks)),
       input: input.trim(),
       text: structuredTextFormat(),
     })
 
     const parsed = parseStructuredOutput(result.output_text)
-    const plan = normalizePlan(parsed, mode, platform)
+    const plan = applyLocksToPlan(normalizePlan(parsed, mode, platform), asText(locks))
     const compiled = compileDirectorPlan(plan, platform)
 
     response.json({
@@ -294,6 +317,7 @@ app.post('/api/reverse', async (request, response) => {
     images,
     platform,
     context = '',
+    locks = '',
     duration,
     width,
     height,
@@ -340,7 +364,7 @@ app.post('/api/reverse', async (request, response) => {
 
     const result = await client.responses.create({
       model: process.env.OPENAI_MODEL ?? 'gpt-6-luna',
-      instructions: reverseInstructions(platform, kind, asText(context), Number(duration)),
+      instructions: reverseInstructions(platform, kind, asText(context), Number(duration), asText(locks)),
       input: [
         {
           role: 'user',
@@ -358,7 +382,7 @@ app.post('/api/reverse', async (request, response) => {
 
     const parsed = parseStructuredOutput(result.output_text)
     const mode = kind === 'image' ? 'reference-image' : 'reference-video'
-    const plan = normalizePlan(parsed, mode, platform)
+    const plan = applyLocksToPlan(normalizePlan(parsed, mode, platform), asText(locks))
     const compiled = compileDirectorPlan(plan, platform)
 
     response.json({
