@@ -2,7 +2,7 @@ import { PlatformId, platforms } from './modelCatalog'
 
 export type InputMode = 'idea' | 'script'
 
-export interface Shot {
+export interface DirectorShot {
   id: number
   title: string
   source: string
@@ -10,6 +10,26 @@ export interface Shot {
   framing: string
   camera: string
   emotion: string
+  subject: string
+  action: string
+  environment: string
+  lighting: string
+  continuity: string
+  dialogue: string
+  sound: string
+}
+
+export interface DirectorPlan {
+  title: string
+  summary: string
+  totalDuration: number
+  recommendedPlatform: PlatformId
+  recommendedModel: string
+  reason: string
+  shots: DirectorShot[]
+}
+
+export interface Shot extends DirectorShot {
   firstFramePrompt: string
   videoPrompt: string
   negativePrompt: string
@@ -47,7 +67,7 @@ function splitToBeats(text: string, mode: InputMode): string[] {
       .filter((s) => s.length > 2)
   }
 
-  return rough.slice(0, 8)
+  return rough.slice(0, 10)
 }
 
 function inferFraming(beat: string, index: number) {
@@ -74,6 +94,20 @@ function inferEmotion(beat: string) {
   return '自然、克制、真实'
 }
 
+function inferEnvironment(beat: string) {
+  if (/河边|钓位|钓鱼/.test(beat)) return '真实河边钓位，水面、草地与钓具关系清楚'
+  if (/车里|车内/.test(beat)) return '汽车内部空间，窗外环境与人物位置关系明确'
+  if (/城市|街道|霓虹/.test(beat)) return '城市街道环境，空间层次明确'
+  if (/房间|室内/.test(beat)) return '真实室内空间，家具与人物动线清楚'
+  return '与剧情匹配的真实环境，前中后景关系清楚'
+}
+
+function inferLighting(beat: string) {
+  if (/雨夜|夜晚|霓虹/.test(beat)) return '夜景低照度，环境光与局部反射形成电影层次'
+  if (/白天|阳光|户外|河边/.test(beat)) return '自然日光，主体肤色与产品材质准确'
+  return '自然、克制的电影光线，主体与背景分离清晰'
+}
+
 function shotTitle(beat: string, index: number) {
   const core = beat.replace(/[。！？!?；;,，]/g, '').slice(0, 16)
   return core || `镜头 ${index + 1}`
@@ -91,38 +125,82 @@ function modelFor(platform: PlatformId) {
   return platforms.find((p) => p.id === platform)?.models[0] ?? 'Seedance 2.5'
 }
 
-function platformPrompt(platform: PlatformId, beat: string, framing: string, camera: string, emotion: string, duration: number) {
-  const base = `主体动作：${beat}。景别：${framing}。运镜：${camera}。情绪：${emotion}。时长约 ${duration} 秒。`
+function platformPrompt(platform: PlatformId, shot: DirectorShot) {
+  const dialogue = shot.dialogue ? `对白：${shot.dialogue}。` : ''
+  const sound = shot.sound ? `声音：${shot.sound}。` : ''
+  const base = `主体：${shot.subject}。动作：${shot.action}。环境：${shot.environment}。景别：${shot.framing}。运镜：${shot.camera}。光线：${shot.lighting}。情绪：${shot.emotion}。时长约 ${shot.duration} 秒。${dialogue}${sound}`
 
   switch (platform) {
     case 'kling':
-      return `${base} 保持主体身份、服装、产品结构和场景空间关系稳定。动作连续自然，真实物理反馈，避免不必要的形变。镜头运动精准、平滑，结尾形成可继续衔接的稳定画面。`
+      return `${base} 图生视频时以首帧为唯一外观基准，只描述动作、物理变化与镜头运动。保持主体身份、服装、产品结构、Logo、颜色和场景空间关系稳定。动作连续自然，镜头精准平滑。连续性要求：${shot.continuity}。`
     case 'vidu':
-      return `${base} 如果提供参考图，将人物、产品和场景分别作为独立参考锚点；保持角色一致性和关键视觉特征。动作清晰，不改变已锁定的角色身份与服装。`
+      return `${base} 如果提供多张参考图，将人物、产品和场景分别作为独立参考锚点，优先保持角色与关键物体一致性。不要重新设计已锁定外观。连续性要求：${shot.continuity}。`
     case 'hailuo':
-      return `${base} 优先表现人物微表情、眼神、呼吸和身体重心变化，让表演有真实情绪递进。镜头服务于人物状态，不做无意义炫技运镜。`
+      return `${base} 优先表现人物微表情、眼神、呼吸、身体重心和真实表演节奏。镜头服务于人物状态，避免无意义炫技。连续性要求：${shot.continuity}。`
     case 'wan':
-      return `${base} 使用中文电影化描述，明确主体、动作、空间、光线和镜头关系；保证动作因果连续、环境稳定、画面不闪烁。`
+      return `${base} 使用清晰中文因果描述，明确动作先后、空间关系和环境反馈。保证运动自然、背景稳定、不闪烁。连续性要求：${shot.continuity}。`
     case 'libtv':
-      return `${base} 作为聚合平台通用 Prompt：优先选择适合该镜头的 Seedance / Wan / MiniMax 模型；只描述真正需要发生的动作与镜头变化，锁定关键主体外观。`
+      return `${base} 作为聚合平台通用视频 Prompt，只描述真正需要发生的动作、镜头与环境变化，并锁定关键主体外观；可优先尝试 Seedance / Wan / MiniMax 中与该镜头最匹配的模型。连续性要求：${shot.continuity}。`
     case 'jimeng':
     case 'xiaoyunque':
     default:
-      return `0-${duration}s：${beat}。${framing}，${camera}。人物/主体保持一致，动作从前一状态自然过渡到下一状态；环境细节有轻微真实运动，主体结构不漂移。整体为电影级真实质感，${emotion}。`
+      return `0-${shot.duration}s：${shot.action}。${shot.framing}，${shot.camera}；${shot.environment}，${shot.lighting}。主体保持一致，动作从上一状态自然过渡到下一状态，环境仅发生与剧情有关的真实运动。${dialogue}${sound}连续性要求：${shot.continuity}。`
   }
 }
 
-function firstFrame(beat: string, framing: string, emotion: string) {
-  return `${beat.replace(/[。！？!?]$/g, '')}的关键起始瞬间，${framing}，主体清晰，构图有明确前中后景，${emotion}，自然真实光线，电影级摄影质感，材质细节清楚，画面干净，高一致性，为后续图生视频保留明确动作空间。`
+function firstFrame(shot: DirectorShot) {
+  return `${shot.subject}处于“${shot.action}”发生前或刚开始的关键瞬间；${shot.environment}；${shot.framing}；${shot.lighting}；情绪为${shot.emotion}。构图明确人物与关键物体位置，前中后景清楚，材质与颜色准确，画面真实克制，为后续动作与运镜保留空间。必须锁定：${shot.continuity}。`
+}
+
+function negativePrompt(shot: DirectorShot) {
+  const productGuard = /产品|商品|logo|钓箱|耳机|手机|包装/i.test(
+    `${shot.subject} ${shot.source}`,
+  )
+    ? '产品结构、Logo、颜色和材质不得擅自改变；'
+    : ''
+
+  return `避免主体变形、五官漂移、手指异常、身份变化、服装跳变、背景闪烁、空间关系错乱、无意义镜头抖动、突然跳切、重复动作；${productGuard}保持镜头前后方向、人物位置与视线连续。`
+}
+
+export function compileDirectorPlan(
+  plan: DirectorPlan,
+  targetPlatform: PlatformId = plan.recommendedPlatform,
+): AnalysisResult {
+  const platformInfo = platforms.find((p) => p.id === targetPlatform)!
+  const shots = plan.shots.map((shot, index) => {
+    const normalized: DirectorShot = {
+      ...shot,
+      id: index + 1,
+      duration: Math.max(1, Math.min(12, Math.round(shot.duration || 3))),
+    }
+
+    return {
+      ...normalized,
+      firstFramePrompt: firstFrame(normalized),
+      videoPrompt: platformPrompt(targetPlatform, normalized),
+      negativePrompt: negativePrompt(normalized),
+    }
+  })
+
+  return {
+    title: plan.title,
+    summary: plan.summary,
+    totalDuration: shots.reduce((sum, shot) => sum + shot.duration, 0),
+    recommendedPlatform: targetPlatform,
+    recommendedModel: platformInfo.models[0],
+    reason: plan.reason || platformInfo.specialty,
+    shots,
+  }
 }
 
 export function analyze(input: string, mode: InputMode, targetPlatform?: PlatformId): AnalysisResult {
   const beats = splitToBeats(input, mode)
   const source = clean(input)
   const recommendedPlatform = targetPlatform ?? recommendPlatform(source)
+  const platformInfo = platforms.find((p) => p.id === recommendedPlatform)!
   const model = modelFor(recommendedPlatform)
 
-  const shots = (beats.length ? beats : ['请先输入你想要的画面或剧本']).map((beat, index) => {
+  const directorShots: DirectorShot[] = (beats.length ? beats : ['请先输入你想要的画面或剧本']).map((beat, index) => {
     const framing = inferFraming(beat, index)
     const camera = inferCamera(beat)
     const emotion = inferEmotion(beat)
@@ -136,21 +214,26 @@ export function analyze(input: string, mode: InputMode, targetPlatform?: Platfor
       framing,
       camera,
       emotion,
-      firstFramePrompt: firstFrame(beat, framing, emotion),
-      videoPrompt: platformPrompt(recommendedPlatform, beat, framing, camera, emotion, duration),
-      negativePrompt: '避免主体变形、五官漂移、手指异常、产品结构改变、Logo 变化、背景闪烁、无意义镜头抖动、突然跳切、重复动作。',
+      subject: beat.replace(/[。！？!?]$/g, ''),
+      action: beat.replace(/[。！？!?]$/g, ''),
+      environment: inferEnvironment(beat),
+      lighting: inferLighting(beat),
+      continuity: '保持人物身份、服装、关键道具、产品外观、位置关系与视线方向一致',
+      dialogue: /[“”"]/.test(beat) ? beat : '',
+      sound: /雨/.test(beat) ? '自然雨声与车内轻微环境声' : '',
     }
   })
 
-  const totalDuration = shots.reduce((sum, shot) => sum + shot.duration, 0)
-
-  return {
-    title: mode === 'script' ? '剧本分镜方案' : '画面导演方案',
-    summary: `已将你的内容拆成 ${shots.length} 个可生成镜头，并转换为 ${platforms.find((p) => p.id === recommendedPlatform)?.name} 的提示词结构。`,
-    totalDuration,
+  return compileDirectorPlan(
+    {
+      title: mode === 'script' ? '剧本分镜方案' : '画面导演方案',
+      summary: `已将你的内容拆成 ${directorShots.length} 个可生成镜头，并转换为 ${platformInfo.name} 的提示词结构。`,
+      totalDuration: directorShots.reduce((sum, shot) => sum + shot.duration, 0),
+      recommendedPlatform,
+      recommendedModel: model,
+      reason: platformInfo.specialty,
+      shots: directorShots,
+    },
     recommendedPlatform,
-    recommendedModel: model,
-    reason: platforms.find((p) => p.id === recommendedPlatform)?.specialty ?? '综合能力均衡',
-    shots,
-  }
+  )
 }
