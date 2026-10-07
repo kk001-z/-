@@ -20,6 +20,7 @@ import {
   Images,
   Layers3,
   LoaderCircle,
+  LockKeyhole,
   Play,
   ScanSearch,
   Sparkles,
@@ -28,6 +29,7 @@ import {
   X,
 } from 'lucide-react'
 import {
+  applyGlobalLocks,
   recompileAnalysisResult,
   type AnalysisResult,
   type InputMode,
@@ -57,6 +59,7 @@ interface PersistedWorkspace {
   result: AnalysisResult | null
   engine: EngineState
   engineModel: string
+  locks: string
 }
 
 const STORAGE_KEY = 'framepilot.workspace.v0.4'
@@ -76,6 +79,7 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [engine, setEngine] = useState<EngineState>(null)
   const [engineModel, setEngineModel] = useState('')
+  const [locks, setLocks] = useState('')
   const [notice, setNotice] = useState('')
   const [reference, setReference] = useState<PreparedReference | null>(null)
   const [preparingReference, setPreparingReference] = useState(false)
@@ -107,6 +111,7 @@ function App() {
       if (saved.result && typeof saved.result === 'object') setResult(saved.result as AnalysisResult)
       if (saved.engine === 'ai' || saved.engine === 'local') setEngine(saved.engine)
       if (typeof saved.engineModel === 'string') setEngineModel(saved.engineModel)
+      if (typeof saved.locks === 'string') setLocks(saved.locks)
     } catch {
       localStorage.removeItem(STORAGE_KEY)
     } finally {
@@ -124,6 +129,7 @@ function App() {
       result,
       engine,
       engineModel,
+      locks,
     }
 
     try {
@@ -131,7 +137,7 @@ function App() {
     } catch {
       // Ignore storage quota/private mode failures. The app itself should keep working.
     }
-  }, [hydrated, mode, platform, input, result, engine, engineModel])
+  }, [hydrated, mode, platform, input, result, engine, engineModel, locks])
 
   async function runAnalysis() {
     if (!canRun || loading || preparingReference) return
@@ -142,8 +148,8 @@ function App() {
     try {
       const response =
         mode === 'reference' && reference
-          ? await analyzeReferenceWithDirector(reference, platform, input.trim())
-          : await analyzeWithDirector(input, mode as InputMode, platform)
+          ? await analyzeReferenceWithDirector(reference, platform, input.trim(), locks)
+          : await analyzeWithDirector(input, mode as InputMode, platform, locks)
 
       setResult(response.result)
       setEngine(response.engine)
@@ -193,11 +199,25 @@ function App() {
     if (next === 'reference') setInput('')
   }
 
+  function updateLocks(value: string) {
+    setLocks(value)
+    if (result) {
+      setResult(null)
+      setEngine(null)
+      setNotice('一致性锁已修改，请重新分析以确保所有镜头使用最新锁定规则。')
+    }
+  }
+
+  function addLockPreset(value: string) {
+    const next = locks.trim() ? `${locks.trim()}；${value}` : value
+    updateLocks(next)
+  }
+
   function selectPlatform(next: PlatformId) {
     setPlatform(next)
 
     if (result) {
-      setResult(recompileAnalysisResult(result, next))
+      setResult(applyGlobalLocks(recompileAnalysisResult(result, next), locks, next))
       setNotice('已在本地切换并重新编译目标平台 Prompt，无需再次调用 AI。')
     }
   }
@@ -385,6 +405,27 @@ function App() {
             <ChevronDown size={18} />
           </div>
 
+          <div className="consistency-lock">
+            <div className="consistency-lock-head">
+              <div>
+                <span><LockKeyhole size={14} /> 一致性资产锁</span>
+                <strong>跨镜头绝对不能变的内容</strong>
+              </div>
+              <small>可选 · 会写入每个镜头</small>
+            </div>
+            <textarea
+              value={locks}
+              onChange={(event) => updateLocks(event.target.value)}
+              placeholder="例如：同一位 25 岁亚洲男性，黑色短发；黑色冲锋衣全程不变；智飞钓箱外观、灰色箱盖、Logo、比例和金属件结构不得改变。"
+            />
+            <div className="lock-presets">
+              <button onClick={() => addLockPreset('人物身份、五官、发型和年龄特征全程一致')}>锁人物</button>
+              <button onClick={() => addLockPreset('服装款式、颜色、配饰和穿着状态全程一致')}>锁服装</button>
+              <button onClick={() => addLockPreset('产品结构、比例、颜色、Logo、接口和材质不得改变')}>锁产品</button>
+              <button onClick={() => addLockPreset('场景布局、关键道具位置和人物空间关系保持连续')}>锁场景</button>
+            </div>
+          </div>
+
           <button className="primary" onClick={runAnalysis} disabled={loading || preparingReference || !canRun}>
             {loading || preparingReference ? <LoaderCircle className="spin" size={18} /> : <Sparkles size={18} />}
             {preparingReference
@@ -397,7 +438,7 @@ function App() {
 
           <div className="engine-hint">
             <span className="engine-dot" />
-            文本模式支持本地回退；图片 / 视频反推需要视觉 AI。草稿与最近一次分镜会自动保存在当前浏览器。
+            文本模式支持本地回退；图片 / 视频反推需要视觉 AI。一致性锁、草稿与最近一次分镜会自动保存在当前浏览器。
           </div>
 
           {notice && !result && <div className="notice composer-notice">{notice}</div>}
@@ -535,7 +576,7 @@ function App() {
       )}
 
       <footer className="shell footer">
-        <span>FramePilot V0.4</span>
+        <span>FramePilot V0.5</span>
         <span>Director + Reverse Prompt + Multi-model Compiler</span>
       </footer>
     </main>
