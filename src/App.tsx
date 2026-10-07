@@ -9,11 +9,13 @@ import {
   Film,
   ImagePlus,
   Layers3,
+  LoaderCircle,
   Play,
   Sparkles,
   WandSparkles,
 } from 'lucide-react'
-import { analyze, AnalysisResult, InputMode } from './lib/promptEngine'
+import { AnalysisResult, InputMode } from './lib/promptEngine'
+import { analyzeWithDirector } from './lib/directorApi'
 import { defaultPlatform, PlatformId, platforms } from './lib/modelCatalog'
 
 const ideaExample = '一个女生坐在车里，看着窗外下雨。她抬手擦去车窗上的雾气，看到远处霓虹灯。镜头从侧面慢慢推进，最后停在她的眼神特写。'
@@ -28,16 +30,32 @@ function App() {
   const [input, setInput] = useState(ideaExample)
   const [result, setResult] = useState<AnalysisResult | null>(null)
   const [copied, setCopied] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [engine, setEngine] = useState<'ai' | 'local' | null>(null)
+  const [engineModel, setEngineModel] = useState('')
+  const [notice, setNotice] = useState('')
 
   const currentPlatform = useMemo(
     () => platforms.find((item) => item.id === platform)!,
     [platform],
   )
 
-  function runAnalysis() {
-    if (!input.trim()) return
-    setResult(analyze(input, mode, platform))
-    setTimeout(() => document.getElementById('result')?.scrollIntoView({ behavior: 'smooth' }), 80)
+  async function runAnalysis() {
+    if (!input.trim() || loading) return
+
+    setLoading(true)
+    setNotice('')
+
+    try {
+      const response = await analyzeWithDirector(input, mode, platform)
+      setResult(response.result)
+      setEngine(response.engine)
+      setEngineModel(response.model ?? '')
+      setNotice(response.notice ?? '')
+      setTimeout(() => document.getElementById('result')?.scrollIntoView({ behavior: 'smooth' }), 80)
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function copyText(key: string, value: string) {
@@ -50,6 +68,8 @@ function App() {
     setMode(next)
     setInput(next === 'idea' ? ideaExample : scriptExample)
     setResult(null)
+    setEngine(null)
+    setNotice('')
   }
 
   return (
@@ -94,8 +114,8 @@ function App() {
           />
 
           <div className="upload-row">
-            <button className="ghost"><ImagePlus size={16} /> 添加参考图 <span>即将支持</span></button>
-            <button className="ghost"><Film size={16} /> 添加参考视频 <span>即将支持</span></button>
+            <button className="ghost"><ImagePlus size={16} /> 添加参考图 <span>V0.3</span></button>
+            <button className="ghost"><Film size={16} /> 添加参考视频 <span>V0.3</span></button>
           </div>
 
           <div className="field-head platform-title">
@@ -124,20 +144,25 @@ function App() {
             <ChevronDown size={18} />
           </div>
 
-          <button className="primary" onClick={runAnalysis}>
-            <Sparkles size={18} />
-            AI 导演分析
-            <ArrowRight size={18} />
+          <button className="primary" onClick={runAnalysis} disabled={loading || !input.trim()}>
+            {loading ? <LoaderCircle className="spin" size={18} /> : <Sparkles size={18} />}
+            {loading ? 'AI 导演正在拆镜…' : 'AI 导演分析'}
+            {!loading && <ArrowRight size={18} />}
           </button>
+
+          <div className="engine-hint">
+            <span className="engine-dot" />
+            已支持 AI Director；未配置服务端密钥时自动使用本地演示引擎。
+          </div>
         </div>
 
         <aside className="side card">
           <div className="side-title"><Layers3 size={18} /> 它会替你做什么？</div>
           <div className="step"><span>01</span><div><strong>理解内容</strong><p>找出人物、场景、动作、产品、对白与情绪。</p></div></div>
-          <div className="step"><span>02</span><div><strong>导演拆镜</strong><p>自动决定镜头数量、景别、运镜、节奏和时长。</p></div></div>
-          <div className="step"><span>03</span><div><strong>生成首帧</strong><p>每个镜头先得到一条文生图 Prompt。</p></div></div>
-          <div className="step"><span>04</span><div><strong>转换视频 Prompt</strong><p>只描述该模型真正需要理解的运动与变化。</p></div></div>
-          <div className="step"><span>05</span><div><strong>平台适配</strong><p>同一个镜头，自动改写成不同平台的语言。</p></div></div>
+          <div className="step"><span>02</span><div><strong>导演拆镜</strong><p>按视觉事件和情绪转折拆镜，而不是机械按句号切。</p></div></div>
+          <div className="step"><span>03</span><div><strong>连续性锁定</strong><p>锁定人物身份、服装、产品结构、位置与视线关系。</p></div></div>
+          <div className="step"><span>04</span><div><strong>首帧 + 视频 Prompt</strong><p>每镜同时产出首帧和图生视频指令。</p></div></div>
+          <div className="step"><span>05</span><div><strong>平台适配</strong><p>同一镜头自动编译成不同平台偏好的语言。</p></div></div>
         </aside>
       </section>
 
@@ -148,6 +173,12 @@ function App() {
               <div className="eyebrow"><Check size={14} /> DIRECTOR ANALYSIS COMPLETE</div>
               <h2>{result.title}</h2>
               <p>{result.summary}</p>
+              <div className={engine === 'ai' ? 'engine-status ai' : 'engine-status local'}>
+                <span />
+                {engine === 'ai'
+                  ? `AI Director · ${engineModel || 'Responses API'}`
+                  : 'Local Director · 演示回退模式'}
+              </div>
             </div>
             <div className="meta-pills">
               <span>{result.shots.length} 镜头</span>
@@ -155,6 +186,8 @@ function App() {
               <span>{result.recommendedModel}</span>
             </div>
           </div>
+
+          {notice && <div className="notice">{notice}</div>}
 
           <div className="recommendation">
             <div className="recommend-icon"><Play size={18} /></div>
@@ -182,6 +215,13 @@ function App() {
                     <span>{shot.framing}</span>
                     <span>{shot.camera}</span>
                     <span>{shot.emotion}</span>
+                    <span>{shot.lighting}</span>
+                  </div>
+
+                  <div className="shot-brief">
+                    <div><span>主体</span><p>{shot.subject}</p></div>
+                    <div><span>动作</span><p>{shot.action}</p></div>
+                    <div><span>连续性</span><p>{shot.continuity}</p></div>
                   </div>
 
                   <PromptBlock
@@ -199,6 +239,14 @@ function App() {
                     onCopy={copyText}
                     accent
                   />
+
+                  {(shot.dialogue || shot.sound) && (
+                    <div className="audio-row">
+                      {shot.dialogue && <span>对白：{shot.dialogue}</span>}
+                      {shot.sound && <span>声音：{shot.sound}</span>}
+                    </div>
+                  )}
+
                   <details>
                     <summary>负面约束 / 稳定性控制</summary>
                     <p>{shot.negativePrompt}</p>
@@ -211,8 +259,8 @@ function App() {
       )}
 
       <footer className="shell footer">
-        <span>FramePilot V0.1</span>
-        <span>中国 AI 视频创作者的 Prompt Compiler</span>
+        <span>FramePilot V0.2</span>
+        <span>中国 AI 视频创作者的 Director + Prompt Compiler</span>
       </footer>
     </main>
   )
