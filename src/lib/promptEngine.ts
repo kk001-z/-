@@ -274,3 +274,29 @@ export function recompileAnalysisResult(
     targetPlatform,
   )
 }
+
+
+export function applyGlobalLocks(
+  result: AnalysisResult,
+  locks: string,
+  targetPlatform: PlatformId = result.recommendedPlatform,
+): AnalysisResult {
+  const normalizedLocks = locks.trim()
+  if (!normalizedLocks) {
+    return targetPlatform === result.recommendedPlatform
+      ? result
+      : recompileAnalysisResult(result, targetPlatform)
+  }
+
+  const locked: AnalysisResult = {
+    ...result,
+    shots: result.shots.map((shot) => ({
+      ...shot,
+      continuity: shot.continuity.includes(normalizedLocks)
+        ? shot.continuity
+        : `${shot.continuity}；全局一致性锁：${normalizedLocks}`,
+    })),
+  }
+
+  return recompileAnalysisResult(locked, targetPlatform)
+}
