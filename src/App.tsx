@@ -1,10 +1,19 @@
-import { useMemo, useRef, useState } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+} from 'react'
 import {
   ArrowRight,
   Check,
   ChevronDown,
   Clapperboard,
+  ClipboardCopy,
   Copy,
+  Download,
+  FileJson,
   FileText,
   Film,
   ImagePlus,
@@ -18,7 +27,11 @@ import {
   WandSparkles,
   X,
 } from 'lucide-react'
-import { type AnalysisResult, type InputMode } from './lib/promptEngine'
+import {
+  recompileAnalysisResult,
+  type AnalysisResult,
+  type InputMode,
+} from './lib/promptEngine'
 import { analyzeReferenceWithDirector, analyzeWithDirector } from './lib/directorApi'
 import { defaultPlatform, type PlatformId, platforms } from './lib/modelCatalog'
 import {
@@ -27,9 +40,26 @@ import {
   prepareReference,
   type PreparedReference,
 } from './lib/media'
+import {
+  downloadTextFile,
+  safeFilename,
+  storyboardToMarkdown,
+  storyboardToPlainText,
+} from './lib/export'
 
 type WorkspaceMode = InputMode | 'reference'
+type EngineState = 'ai' | 'local' | null
 
+interface PersistedWorkspace {
+  mode: WorkspaceMode
+  platform: PlatformId
+  input: string
+  result: AnalysisResult | null
+  engine: EngineState
+  engineModel: string
+}
+
+const STORAGE_KEY = 'framepilot.workspace.v0.4'
 const ideaExample = '一个女生坐在车里，看着窗外下雨。她抬手擦去车窗上的雾气，看到远处霓虹灯。镜头从侧面慢慢推进，最后停在她的眼神特写。'
 const scriptExample = `镜头一：男生走进河边钓位，看见朋友靠在钓箱上闭着眼。
 男生：“你不是来钓鱼的吗？”
@@ -44,13 +74,14 @@ function App() {
   const [result, setResult] = useState<AnalysisResult | null>(null)
   const [copied, setCopied] = useState('')
   const [loading, setLoading] = useState(false)
-  const [engine, setEngine] = useState<'ai' | 'local' | null>(null)
+  const [engine, setEngine] = useState<EngineState>(null)
   const [engineModel, setEngineModel] = useState('')
   const [notice, setNotice] = useState('')
   const [reference, setReference] = useState<PreparedReference | null>(null)
   const [preparingReference, setPreparingReference] = useState(false)
   const [referenceProgress, setReferenceProgress] = useState('')
   const [dragActive, setDragActive] = useState(false)
+  const [hydrated, setHydrated] = useState(false)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const videoInputRef = useRef<HTMLInputElement>(null)
 
@@ -60,6 +91,47 @@ function App() {
   )
 
   const canRun = mode === 'reference' ? Boolean(reference) : Boolean(input.trim())
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY)
+      if (!raw) return
+
+      const saved = JSON.parse(raw) as Partial<PersistedWorkspace>
+      const validMode = saved.mode === 'idea' || saved.mode === 'script' || saved.mode === 'reference'
+      const validPlatform = platforms.some((item) => item.id === saved.platform)
+
+      if (validMode && saved.mode) setMode(saved.mode)
+      if (validPlatform && saved.platform) setPlatform(saved.platform)
+      if (typeof saved.input === 'string') setInput(saved.input)
+      if (saved.result && typeof saved.result === 'object') setResult(saved.result as AnalysisResult)
+      if (saved.engine === 'ai' || saved.engine === 'local') setEngine(saved.engine)
+      if (typeof saved.engineModel === 'string') setEngineModel(saved.engineModel)
+    } catch {
+      localStorage.removeItem(STORAGE_KEY)
+    } finally {
+      setHydrated(true)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!hydrated) return
+
+    const payload: PersistedWorkspace = {
+      mode,
+      platform,
+      input,
+      result,
+      engine,
+      engineModel,
+    }
+
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+    } catch {
+      // Ignore storage quota/private mode failures. The app itself should keep working.
+    }
+  }, [hydrated, mode, platform, input, result, engine, engineModel])
 
   async function runAnalysis() {
     if (!canRun || loading || preparingReference) return
@@ -93,6 +165,23 @@ function App() {
     setTimeout(() => setCopied(''), 1200)
   }
 
+  async function copyAllPrompts() {
+    if (!result) return
+    await copyText('all', storyboardToPlainText(result, currentPlatform.name))
+  }
+
+  function exportMarkdown() {
+    if (!result) return
+    const filename = `${safeFilename(result.title)}-${currentPlatform.short}.md`
+    downloadTextFile(filename, storyboardToMarkdown(result, currentPlatform.name), 'text/markdown;charset=utf-8')
+  }
+
+  function exportJson() {
+    if (!result) return
+    const filename = `${safeFilename(result.title)}-${currentPlatform.short}.json`
+    downloadTextFile(filename, JSON.stringify(result, null, 2), 'application/json;charset=utf-8')
+  }
+
   function changeMode(next: WorkspaceMode) {
     setMode(next)
     setResult(null)
@@ -102,6 +191,15 @@ function App() {
     if (next === 'idea') setInput(ideaExample)
     if (next === 'script') setInput(scriptExample)
     if (next === 'reference') setInput('')
+  }
+
+  function selectPlatform(next: PlatformId) {
+    setPlatform(next)
+
+    if (result) {
+      setResult(recompileAnalysisResult(result, next))
+      setNotice('已在本地切换并重新编译目标平台 Prompt，无需再次调用 AI。')
+    }
   }
 
   async function handleReferenceFile(file?: File) {
@@ -137,7 +235,7 @@ function App() {
     setNotice('')
   }
 
-  function handleDrop(event: React.DragEvent<HTMLDivElement>) {
+  function handleDrop(event: DragEvent<HTMLDivElement>) {
     event.preventDefault()
     setDragActive(false)
     const file = event.dataTransfer.files?.[0]
@@ -263,14 +361,14 @@ function App() {
 
           <div className="field-head platform-title">
             <label>输出到哪个平台？</label>
-            <span>平台决定最终 Prompt 写法</span>
+            <span>{result ? '切换后立即重新编译，不重新调用 AI' : '平台决定最终 Prompt 写法'}</span>
           </div>
 
           <div className="platform-grid">
             {platforms.map((item) => (
               <button
                 key={item.id}
-                onClick={() => setPlatform(item.id)}
+                onClick={() => selectPlatform(item.id)}
                 className={platform === item.id ? 'platform active' : 'platform'}
               >
                 <strong>{item.short}</strong>
@@ -299,7 +397,7 @@ function App() {
 
           <div className="engine-hint">
             <span className="engine-dot" />
-            文本模式支持本地回退；图片 / 视频反推需要配置服务端视觉 AI。
+            文本模式支持本地回退；图片 / 视频反推需要视觉 AI。草稿与最近一次分镜会自动保存在当前浏览器。
           </div>
 
           {notice && !result && <div className="notice composer-notice">{notice}</div>}
@@ -348,10 +446,20 @@ function App() {
                   : 'Local Director · 演示回退模式'}
               </div>
             </div>
-            <div className="meta-pills">
-              <span>{result.shots.length} 镜头</span>
-              <span>约 {result.totalDuration}s</span>
-              <span>{result.recommendedModel}</span>
+            <div className="result-tools">
+              <div className="meta-pills">
+                <span>{result.shots.length} 镜头</span>
+                <span>约 {result.totalDuration}s</span>
+                <span>{result.recommendedModel}</span>
+              </div>
+              <div className="export-actions">
+                <button onClick={copyAllPrompts}>
+                  {copied === 'all' ? <Check size={14} /> : <ClipboardCopy size={14} />}
+                  {copied === 'all' ? '已复制' : '复制全部'}
+                </button>
+                <button onClick={exportMarkdown}><Download size={14} /> 导出 MD</button>
+                <button onClick={exportJson}><FileJson size={14} /> 导出 JSON</button>
+              </div>
             </div>
           </div>
 
@@ -427,8 +535,8 @@ function App() {
       )}
 
       <footer className="shell footer">
-        <span>FramePilot V0.3</span>
-        <span>中国 AI 视频创作者的 Director + Reverse Prompt + Prompt Compiler</span>
+        <span>FramePilot V0.4</span>
+        <span>Director + Reverse Prompt + Multi-model Compiler</span>
       </footer>
     </main>
   )
