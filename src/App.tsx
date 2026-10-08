@@ -30,9 +30,12 @@ import {
 } from 'lucide-react'
 import {
   applyGlobalLocks,
+  deleteAnalysisShot,
+  duplicateAnalysisShot,
   reorderAnalysisShots,
   replaceAnalysisShot,
   recompileAnalysisResult,
+  updateAnalysisShotDuration,
   type AnalysisResult,
   type InputMode,
   type Shot,
@@ -69,6 +72,7 @@ import {
 import BiblePanel from './components/BiblePanel'
 import ProjectBar from './components/ProjectBar'
 import StoryTimeline from './components/StoryTimeline'
+import ShotEditTools from './components/ShotEditTools'
 
 type WorkspaceMode = InputMode | 'reference'
 type EngineState = 'ai' | 'local' | null
@@ -117,6 +121,7 @@ function App() {
   const [characters, setCharacters] = useState<CharacterBible[]>([])
   const [products, setProducts] = useState<ProductBible[]>([])
   const [regeneratingShotId, setRegeneratingShotId] = useState<number | null>(null)
+  const [resultHistory, setResultHistory] = useState<AnalysisResult[]>([])
 
   const imageInputRef = useRef<HTMLInputElement>(null)
   const videoInputRef = useRef<HTMLInputElement>(null)
@@ -289,6 +294,25 @@ function App() {
     }
   }
 
+  function commitResult(next: AnalysisResult, message?: string) {
+    if (result) {
+      setResultHistory((history) => [...history.slice(-19), result])
+    }
+    setResult(next)
+    if (message) setNotice(message)
+  }
+
+  function undoStoryboardChange() {
+    setResultHistory((history) => {
+      const previous = history.at(-1)
+      if (previous) {
+        setResult(previous)
+        setNotice('已撤销上一次分镜修改。')
+      }
+      return history.slice(0, -1)
+    })
+  }
+
   async function runAnalysis() {
     if (!canRun || loading || preparingReference) return
 
@@ -302,6 +326,7 @@ function App() {
           : await analyzeWithDirector(input, mode as InputMode, platform, effectiveLocks)
 
       setResult(response.result)
+      setResultHistory([])
       setEngine(response.engine)
       setEngineModel(response.model ?? '')
       setNotice(response.notice ?? '')
@@ -315,7 +340,7 @@ function App() {
     }
   }
 
-  async function regenerateShot(shot: Shot) {
+  async function regenerateShot(shot: Shot, customInstruction = '') {
     if (!result || regeneratingShotId !== null) return
 
     setRegeneratingShotId(shot.id)
@@ -327,12 +352,14 @@ function App() {
         platform,
         effectiveLocks,
         input.trim(),
-        '保持当前镜头的剧情功能，优化镜头设计、动作可执行性和生成稳定性。',
+        customInstruction.trim() || '保持当前镜头的剧情功能，优化镜头设计、动作可执行性和生成稳定性。',
       )
-      setResult(replaceAnalysisShot(result, shot.id, response.shot, platform))
+      commitResult(
+        replaceAnalysisShot(result, shot.id, response.shot, platform),
+        `SHOT ${String(shot.id).padStart(2, '0')} 已单独重生成，其他镜头未重新调用 AI。`,
+      )
       setEngine('ai')
       if (response.model) setEngineModel(response.model)
-      setNotice(`SHOT ${String(shot.id).padStart(2, '0')} 已单独重生成，其他镜头未重新调用 AI。`)
     } catch (error) {
       setNotice(error instanceof Error ? error.message : '单镜重生成失败。')
     } finally {
@@ -342,8 +369,34 @@ function App() {
 
   function reorderShots(fromIndex: number, toIndex: number) {
     if (!result) return
-    setResult(reorderAnalysisShots(result, fromIndex, toIndex, platform))
-    setNotice('镜头顺序已调整，并已重新计算编号与时间轴。')
+    commitResult(
+      reorderAnalysisShots(result, fromIndex, toIndex, platform),
+      '镜头顺序已调整，并已重新计算编号与时间轴。',
+    )
+  }
+
+  function duplicateShot(shotId: number) {
+    if (!result) return
+    commitResult(
+      duplicateAnalysisShot(result, shotId, platform),
+      '镜头已复制，并自动重新编号。',
+    )
+  }
+
+  function deleteShot(shotId: number) {
+    if (!result || result.shots.length <= 1) return
+    commitResult(
+      deleteAnalysisShot(result, shotId, platform),
+      '镜头已删除，并自动重新计算时间轴。',
+    )
+  }
+
+  function changeShotDuration(shotId: number, duration: number) {
+    if (!result || !Number.isFinite(duration)) return
+    commitResult(
+      updateAnalysisShotDuration(result, shotId, duration, platform),
+      '镜头时长已修改，并已重新编译当前平台 Prompt。',
+    )
   }
 
   async function copyText(key: string, value: string) {
@@ -390,6 +443,7 @@ function App() {
   function changeMode(next: WorkspaceMode) {
     setMode(next)
     setResult(null)
+    setResultHistory([])
     setEngine(null)
     setNotice('')
 
@@ -402,6 +456,7 @@ function App() {
     setLocks(value)
     if (result) {
       setResult(null)
+      setResultHistory([])
       setEngine(null)
       setNotice('一致性锁已修改，请重新分析以确保所有镜头使用最新锁定规则。')
     }
@@ -416,6 +471,7 @@ function App() {
     setCharacters(next)
     if (result) {
       setResult(null)
+      setResultHistory([])
       setEngine(null)
       setNotice('Character Bible 已修改，请重新分析以应用到全部镜头。')
     }
@@ -425,6 +481,7 @@ function App() {
     setProducts(next)
     if (result) {
       setResult(null)
+      setResultHistory([])
       setEngine(null)
       setNotice('Product Bible 已修改，请重新分析以应用到全部镜头。')
     }
@@ -739,6 +796,9 @@ function App() {
                 <span>{result.recommendedModel}</span>
               </div>
               <div className="export-actions">
+                <button onClick={undoStoryboardChange} disabled={!resultHistory.length}>
+                  撤销{resultHistory.length ? ` (${resultHistory.length})` : ''}
+                </button>
                 <button onClick={copyAllPrompts}>
                   {copied === 'all' ? <Check size={14} /> : <ClipboardCopy size={14} />}
                   {copied === 'all' ? '已复制' : '复制全部'}
@@ -772,13 +832,6 @@ function App() {
               <article className="shot-card" key={shot.id}>
                 <div className="shot-index">
                   <span>SHOT {String(shot.id).padStart(2, '0')}</span>
-                  <button
-                    className="shot-regenerate"
-                    onClick={() => void regenerateShot(shot)}
-                    disabled={regeneratingShotId !== null}
-                  >
-                    {regeneratingShotId === shot.id ? '生成中…' : '单镜重生成'}
-                  </button>
                 </div>
                 <div className="shot-main">
                   <div className="shot-title-row">
@@ -801,6 +854,16 @@ function App() {
                     <div><span>动作</span><p>{shot.action}</p></div>
                     <div><span>连续性</span><p>{shot.continuity}</p></div>
                   </div>
+
+                  <ShotEditTools
+                    shot={shot}
+                    busy={regeneratingShotId === shot.id}
+                    canDelete={result.shots.length > 1}
+                    onRegenerate={(targetShot, instruction) => void regenerateShot(targetShot, instruction)}
+                    onDuplicate={duplicateShot}
+                    onDelete={deleteShot}
+                    onDurationChange={changeShotDuration}
+                  />
 
                   <PromptBlock
                     title={mode === 'reference' ? '反推首帧 / 文生图 Prompt' : '首帧 / 文生图 Prompt'}
@@ -837,7 +900,7 @@ function App() {
       )}
 
       <footer className="shell footer">
-        <span>FramePilot V0.6</span>
+        <span>FramePilot V0.7</span>
         <span>Project Bible + Director + Reverse Prompt + Timeline</span>
       </footer>
     </main>
