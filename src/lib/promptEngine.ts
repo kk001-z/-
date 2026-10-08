@@ -17,6 +17,7 @@ export interface DirectorShot {
   continuity: string
   dialogue: string
   sound: string
+  referenceAssetIds?: string[]
 }
 
 export interface DirectorPlan {
@@ -259,6 +260,7 @@ export function recompileAnalysisResult(
     continuity: shot.continuity,
     dialogue: shot.dialogue,
     sound: shot.sound,
+    referenceAssetIds: Array.isArray(shot.referenceAssetIds) ? shot.referenceAssetIds : [],
   }))
 
   return compileDirectorPlan(
@@ -412,4 +414,20 @@ export function updateAnalysisShotDuration(
   }
 
   return recompileAnalysisResult(normalized, targetPlatform)
+}
+
+
+export function updateAnalysisShotAssets(
+  result: AnalysisResult,
+  shotId: number,
+  referenceAssetIds: string[],
+): AnalysisResult {
+  return {
+    ...result,
+    shots: result.shots.map((shot) =>
+      shot.id === shotId
+        ? { ...shot, referenceAssetIds: [...new Set(referenceAssetIds)] }
+        : shot,
+    ),
+  }
 }
