@@ -155,6 +155,21 @@ function App() {
     [locks, bibleLocks],
   )
 
+  const bibleReferenceAssetIds = useMemo(
+    () => [
+      ...characters.filter((item) => item.locked).flatMap((item) => item.referenceAssetIds ?? []),
+      ...products.filter((item) => item.locked).flatMap((item) => item.referenceAssetIds ?? []),
+    ].filter((id, index, all) => all.indexOf(id) === index).slice(0, 6),
+    [characters, products],
+  )
+
+  const bibleReferenceImages = useMemo(
+    () => assets
+      .filter((asset) => bibleReferenceAssetIds.includes(asset.id))
+      .map((asset) => asset.dataUrl),
+    [assets, bibleReferenceAssetIds],
+  )
+
   const canRun = mode === 'reference' ? Boolean(reference) : Boolean(input.trim())
 
   useEffect(() => {
@@ -382,8 +397,20 @@ function App() {
     try {
       const response =
         mode === 'reference' && reference
-          ? await analyzeReferenceWithDirector(reference, platform, input.trim(), effectiveLocks)
-          : await analyzeWithDirector(input, mode as InputMode, platform, effectiveLocks)
+          ? await analyzeReferenceWithDirector(
+              reference,
+              platform,
+              input.trim(),
+              effectiveLocks,
+              bibleReferenceImages,
+            )
+          : await analyzeWithDirector(
+              input,
+              mode as InputMode,
+              platform,
+              effectiveLocks,
+              bibleReferenceImages,
+            )
 
       setResult(response.result)
       setResultHistory([])
@@ -407,12 +434,17 @@ function App() {
     setNotice('')
 
     try {
+      const shotReferenceImages = assets
+        .filter((asset) => (shot.referenceAssetIds ?? []).includes(asset.id))
+        .map((asset) => asset.dataUrl)
+
       const response = await regenerateShotWithDirector(
         shot,
         platform,
         effectiveLocks,
         input.trim(),
         customInstruction.trim() || '保持当前镜头的剧情功能，优化镜头设计、动作可执行性和生成稳定性。',
+        shotReferenceImages,
       )
       commitResult(
         replaceAnalysisShot(result, shot.id, response.shot, platform),
@@ -459,6 +491,94 @@ function App() {
     )
   }
 
+  function changeShotAssets(shotId: number, ids: string[]) {
+    if (!result) return
+    commitResult(
+      updateAnalysisShotAssets(result, shotId, ids),
+      `SHOT ${String(shotId).padStart(2, '0')} 的参考图绑定已更新。`,
+    )
+  }
+
+  async function uploadAsset(file: File) {
+    setAssetBusy(true)
+    setNotice('')
+    try {
+      const project = ensureActiveProject()
+      const asset = await createProjectAsset(file, project.id)
+      setAssets((items) => [asset, ...items])
+      setNotice(`参考图「${asset.name}」已加入项目资产库。`)
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : '参考图上传失败。')
+    } finally {
+      setAssetBusy(false)
+    }
+  }
+
+  async function removeAsset(assetId: string) {
+    try {
+      await deleteProjectAsset(assetId)
+      setAssets((items) => items.filter((item) => item.id !== assetId))
+      setCharacters((items) => items.map((item) => ({
+        ...item,
+        referenceAssetIds: (item.referenceAssetIds ?? []).filter((id) => id !== assetId),
+      })))
+      setProducts((items) => items.map((item) => ({
+        ...item,
+        referenceAssetIds: (item.referenceAssetIds ?? []).filter((id) => id !== assetId),
+      })))
+      if (result) {
+        setResult({
+          ...result,
+          shots: result.shots.map((shot) => ({
+            ...shot,
+            referenceAssetIds: (shot.referenceAssetIds ?? []).filter((id) => id !== assetId),
+          })),
+        })
+      }
+      setNotice('参考图已从项目中删除，并解除所有 Bible / Shot 绑定。')
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : '删除参考图失败。')
+    }
+  }
+
+  function bindAsset(assetId: string, target: string) {
+    const [type, id] = target.split(':')
+    if (type === 'character') {
+      setCharacters((items) => items.map((item) =>
+        item.id === id
+          ? { ...item, referenceAssetIds: [...new Set([...(item.referenceAssetIds ?? []), assetId])].slice(0, 6) }
+          : item,
+      ))
+    }
+    if (type === 'product') {
+      setProducts((items) => items.map((item) =>
+        item.id === id
+          ? { ...item, referenceAssetIds: [...new Set([...(item.referenceAssetIds ?? []), assetId])].slice(0, 6) }
+          : item,
+      ))
+    }
+    setNotice('参考图已绑定到 Bible。下一次导演分析会把它作为视觉锚点发送给 AI。')
+  }
+
+  function unbindAsset(assetId: string, target: string) {
+    const [type, id] = target.split(':')
+    if (type === 'character') {
+      setCharacters((items) => items.map((item) =>
+        item.id === id
+          ? { ...item, referenceAssetIds: (item.referenceAssetIds ?? []).filter((value) => value !== assetId) }
+          : item,
+      ))
+    }
+    if (type === 'product') {
+      setProducts((items) => items.map((item) =>
+        item.id === id
+          ? { ...item, referenceAssetIds: (item.referenceAssetIds ?? []).filter((value) => value !== assetId) }
+          : item,
+      ))
+    }
+    setNotice('已解除 Bible 参考图绑定。')
+  }
+
   async function copyText(key: string, value: string) {
     await navigator.clipboard.writeText(value)
     setCopied(key)
@@ -474,6 +594,16 @@ function App() {
     if (!result) return
     const filename = `${safeFilename(result.title)}-${currentPlatform.short}.md`
     downloadTextFile(filename, storyboardToMarkdown(result, currentPlatform.name), 'text/markdown;charset=utf-8')
+  }
+
+  function exportCsv() {
+    if (!result) return
+    const filename = `${safeFilename(result.title)}-${currentPlatform.short}.csv`
+    downloadTextFile(
+      filename,
+      '\ufeff' + storyboardToCsv(result),
+      'text/csv;charset=utf-8',
+    )
   }
 
   function exportJson() {
@@ -492,12 +622,88 @@ function App() {
             products,
           },
           storyboard: result,
+          assets: assets.map(({ projectId: _projectId, ...asset }) => asset),
         },
         null,
         2,
       ),
       'application/json;charset=utf-8',
     )
+  }
+
+  async function importProjectBundle(file: File) {
+    try {
+      const raw = await file.text()
+      const bundle = JSON.parse(raw) as {
+        project?: {
+          name?: string
+          platform?: PlatformId
+          manualLocks?: string
+          locks?: string
+          characters?: CharacterBible[]
+          products?: ProductBible[]
+        }
+        storyboard?: AnalysisResult | null
+        assets?: Array<Omit<ProjectAsset, 'projectId'>>
+      }
+
+      if (!bundle.project && !bundle.storyboard) {
+        throw new Error('不是可识别的 FramePilot 项目 JSON。')
+      }
+
+      const imported = normalizeProject({
+        ...createProject(bundle.project?.name || '导入项目'),
+        name: bundle.project?.name || '导入项目',
+        platform: bundle.project?.platform || defaultPlatform,
+        input: '',
+        locks: bundle.project?.manualLocks || bundle.project?.locks || '',
+        characters: bundle.project?.characters || [],
+        products: bundle.project?.products || [],
+        result: bundle.storyboard || null,
+      })
+
+      const assetIdMap = new Map<string, string>()
+      const restoredAssets: Array<Omit<ProjectAsset, 'projectId'>> = []
+
+      for (const asset of bundle.assets ?? []) {
+        const nextId = `asset-${crypto.randomUUID()}`
+        assetIdMap.set(asset.id, nextId)
+        restoredAssets.push({ ...asset, id: nextId })
+      }
+
+      imported.characters = imported.characters.map((item) => ({
+        ...item,
+        referenceAssetIds: (item.referenceAssetIds ?? [])
+          .map((id) => assetIdMap.get(id) || id)
+          .filter((id) => restoredAssets.some((asset) => asset.id === id)),
+      }))
+      imported.products = imported.products.map((item) => ({
+        ...item,
+        referenceAssetIds: (item.referenceAssetIds ?? [])
+          .map((id) => assetIdMap.get(id) || id)
+          .filter((id) => restoredAssets.some((asset) => asset.id === id)),
+      }))
+      if (imported.result) {
+        imported.result = {
+          ...imported.result,
+          shots: imported.result.shots.map((shot) => ({
+            ...shot,
+            referenceAssetIds: (shot.referenceAssetIds ?? [])
+              .map((id) => assetIdMap.get(id) || id)
+              .filter((id) => restoredAssets.some((asset) => asset.id === id)),
+          })),
+        }
+      }
+
+      const nextProjects = [imported, ...projects]
+      setProjects(nextProjects)
+      saveProjects(nextProjects)
+      await importProjectAssets(imported.id, restoredAssets)
+      applyProject(imported)
+      setNotice(`项目「${imported.name}」已导入，恢复 ${restoredAssets.length} 张参考图。`)
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : '项目导入失败。')
+    }
   }
 
   function changeMode(next: WorkspaceMode) {
