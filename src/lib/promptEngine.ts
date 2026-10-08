@@ -352,3 +352,64 @@ export function replaceAnalysisShot(
 
   return recompileAnalysisResult(normalized, targetPlatform)
 }
+
+
+export function deleteAnalysisShot(
+  result: AnalysisResult,
+  shotId: number,
+  targetPlatform: PlatformId = result.recommendedPlatform,
+): AnalysisResult {
+  if (result.shots.length <= 1) return result
+
+  const normalized: AnalysisResult = {
+    ...result,
+    shots: result.shots
+      .filter((shot) => shot.id !== shotId)
+      .map((shot, index) => ({ ...shot, id: index + 1 })),
+  }
+
+  return recompileAnalysisResult(normalized, targetPlatform)
+}
+
+export function duplicateAnalysisShot(
+  result: AnalysisResult,
+  shotId: number,
+  targetPlatform: PlatformId = result.recommendedPlatform,
+): AnalysisResult {
+  const index = result.shots.findIndex((shot) => shot.id === shotId)
+  if (index < 0 || result.shots.length >= 20) return result
+
+  const shots = [...result.shots]
+  const source = shots[index]
+  shots.splice(index + 1, 0, {
+    ...source,
+    title: `${source.title} · Copy`,
+  })
+
+  const normalized: AnalysisResult = {
+    ...result,
+    shots: shots.map((shot, shotIndex) => ({
+      ...shot,
+      id: shotIndex + 1,
+    })),
+  }
+
+  return recompileAnalysisResult(normalized, targetPlatform)
+}
+
+export function updateAnalysisShotDuration(
+  result: AnalysisResult,
+  shotId: number,
+  duration: number,
+  targetPlatform: PlatformId = result.recommendedPlatform,
+): AnalysisResult {
+  const safeDuration = Math.max(1, Math.min(12, Math.round(duration || 1)))
+  const normalized: AnalysisResult = {
+    ...result,
+    shots: result.shots.map((shot) =>
+      shot.id === shotId ? { ...shot, duration: safeDuration } : shot,
+    ),
+  }
+
+  return recompileAnalysisResult(normalized, targetPlatform)
+}
