@@ -20,12 +20,13 @@ export async function analyzeWithDirector(
   mode: InputMode,
   platform: PlatformId,
   locks = '',
+  referenceImages: string[] = [],
 ): Promise<DirectorResponse> {
   try {
     const response = await fetch('/api/director', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ input, mode, platform, locks }),
+      body: JSON.stringify({ input, mode, platform, locks, referenceImages }),
     })
 
     if (response.ok) {
@@ -58,6 +59,7 @@ export async function analyzeReferenceWithDirector(
   platform: PlatformId,
   context = '',
   locks = '',
+  lockedReferenceImages: string[] = [],
 ): Promise<DirectorResponse> {
   const response = await fetch('/api/reverse', {
     method: 'POST',
@@ -72,6 +74,7 @@ export async function analyzeReferenceWithDirector(
       platform,
       context,
       locks,
+      lockedReferenceImages,
     }),
   })
 
