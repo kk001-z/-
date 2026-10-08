@@ -414,6 +414,7 @@ app.post('/api/shot/regenerate', async (request, response) => {
     locks = '',
     projectContext = '',
     instruction = '',
+    referenceImages = [],
   } = request.body ?? {}
 
   if (!shot || typeof shot !== 'object') {
@@ -441,6 +442,28 @@ app.post('/api/shot/regenerate', async (request, response) => {
     const lockText = asText(locks)
     const userInstruction = asText(instruction)
     const contextText = asText(projectContext)
+    const validReferenceImages = Array.isArray(referenceImages)
+      ? referenceImages.filter(isImageDataUrl).slice(0, 6)
+      : []
+
+    const shotInput = validReferenceImages.length
+      ? [
+          {
+            role: 'user' as const,
+            content: [
+              {
+                type: 'input_text' as const,
+                text: `请重设计这个镜头：${currentShot.source}。这些图片是当前镜头必须参考的人物/产品视觉锚点，请保持身份、产品结构、Logo、颜色和材质一致。`,
+              },
+              ...validReferenceImages.map((imageUrl: string) => ({
+                type: 'input_image' as const,
+                image_url: imageUrl,
+                detail: 'high' as const,
+              })),
+            ],
+          },
+        ]
+      : `请重设计这个镜头：${currentShot.source}`
 
     const result = await client.responses.create({
       model: process.env.OPENAI_MODEL ?? 'gpt-6-luna',
@@ -470,8 +493,9 @@ ${userInstruction || '在不改变剧情意图的前提下，让镜头更专业�
 4. 连续性必须兼容前后镜头，不得破坏全局锁。
 5. 不写空洞的“电影感”“高级感”堆词，要可执行。
 6. duration 控制在 1-12 秒。
+7. 如果提供了参考图，它们是视觉锚点：人物身份、五官、服装、产品结构、Logo、颜色和关键材质不得擅自改动。
 `.trim(),
-      input: `请重设计这个镜头：${currentShot.source}`,
+      input: shotInput,
       text: structuredTextFormat(),
     })
 
