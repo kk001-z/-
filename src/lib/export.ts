@@ -100,3 +100,56 @@ export function safeFilename(value: string) {
 
   return normalized || 'framepilot-storyboard'
 }
+
+
+function csvCell(value: string | number | undefined) {
+  const text = String(value ?? '').replace(/"/g, '""')
+  return `"${text}"`
+}
+
+export function storyboardToCsv(result: AnalysisResult) {
+  const headers = [
+    'Shot',
+    'Title',
+    'Duration',
+    'Framing',
+    'Camera',
+    'Emotion',
+    'Subject',
+    'Action',
+    'Environment',
+    'Lighting',
+    'Continuity',
+    'Dialogue',
+    'Sound',
+    'ReferenceAssets',
+    'FirstFramePrompt',
+    'VideoPrompt',
+    'NegativePrompt',
+  ]
+
+  const rows = result.shots.map((shot) => [
+    shot.id,
+    shot.title,
+    shot.duration,
+    shot.framing,
+    shot.camera,
+    shot.emotion,
+    shot.subject,
+    shot.action,
+    shot.environment,
+    shot.lighting,
+    shot.continuity,
+    shot.dialogue,
+    shot.sound,
+    (shot.referenceAssetIds ?? []).join('|'),
+    shot.firstFramePrompt,
+    shot.videoPrompt,
+    shot.negativePrompt,
+  ])
+
+  return [
+    headers.map(csvCell).join(','),
+    ...rows.map((row) => row.map((value) => csvCell(value)).join(',')),
+  ].join('\n')
+}
