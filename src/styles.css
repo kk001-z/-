@@ -519,3 +519,407 @@ textarea.reference-context { min-height:94px; }
   border-color:#504774;
   background:#181622;
 }
+
+
+.project-bar {
+  margin-top:18px;
+  border:1px solid #202129;
+  background:#0d0e13;
+  border-radius:16px;
+  min-height:64px;
+  padding:10px 12px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:14px;
+}
+.project-bar-left {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  min-width:0;
+}
+.project-icon {
+  width:36px;
+  height:36px;
+  display:grid;
+  place-items:center;
+  border:1px solid #2b2d36;
+  border-radius:11px;
+  background:#15161c;
+  color:#8e80ff;
+}
+.project-bar-left span {
+  display:block;
+  color:#646772;
+  font-size:9px;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  margin-bottom:3px;
+}
+.project-bar-left input {
+  width:min(360px,42vw);
+  border:0;
+  outline:0;
+  padding:0;
+  background:transparent;
+  color:#e5e6eb;
+  font-size:13px;
+  font-weight:800;
+}
+.project-bar-right {
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:7px;
+  flex-wrap:wrap;
+}
+.project-bar-right select,
+.project-bar-right button {
+  border:1px solid #2b2d36;
+  background:#131419;
+  color:#9496a0;
+  border-radius:9px;
+  min-height:34px;
+  padding:7px 10px;
+  font-size:10px;
+}
+.project-bar-right button {
+  display:flex;
+  align-items:center;
+  gap:6px;
+  font-weight:700;
+}
+.project-bar-right button:hover,
+.project-bar-right select:hover {
+  border-color:#494c59;
+  color:#d0d2d8;
+}
+.project-bar-right .danger-lite {
+  padding-inline:9px;
+  color:#8b6f76;
+}
+
+.bible-panel {
+  width:min(1180px,calc(100% - 40px));
+  margin:0 auto 18px;
+  padding:18px;
+}
+.bible-head {
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:16px;
+}
+.bible-kicker {
+  display:flex;
+  align-items:center;
+  gap:6px;
+  color:#8f80ff;
+  font-size:9px;
+  font-weight:900;
+  letter-spacing:.08em;
+}
+.bible-head h3 {
+  margin:5px 0 5px;
+  font-size:16px;
+}
+.bible-head p {
+  margin:0;
+  color:#6f727e;
+  font-size:11px;
+  line-height:1.55;
+}
+.bible-actions {
+  display:flex;
+  gap:7px;
+  flex-wrap:wrap;
+}
+.bible-actions button {
+  display:flex;
+  align-items:center;
+  gap:6px;
+  border:1px solid #30323c;
+  background:#15161c;
+  color:#b5b7c0;
+  border-radius:9px;
+  padding:8px 10px;
+  font-size:10px;
+  font-weight:700;
+}
+.bible-empty {
+  margin-top:14px;
+  min-height:92px;
+  border:1px dashed #2e3039;
+  border-radius:12px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  flex-wrap:wrap;
+  color:#626570;
+  font-size:10px;
+}
+.bible-empty strong { color:#8a8d97; }
+.bible-grid {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px;
+  margin-top:14px;
+}
+.bible-card {
+  border:1px solid #272932;
+  border-radius:13px;
+  background:#0f1015;
+  padding:12px;
+}
+.bible-card.product-bible {
+  background:linear-gradient(180deg,rgba(34,31,48,.34),#0f1015 54%);
+}
+.bible-card-top {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+}
+.bible-card-top > span {
+  display:flex;
+  align-items:center;
+  gap:6px;
+  color:#787b86;
+  font-size:9px;
+  font-weight:800;
+  text-transform:uppercase;
+  letter-spacing:.07em;
+}
+.bible-card-controls {
+  display:flex;
+  align-items:center;
+  gap:5px;
+}
+.mini-lock {
+  display:flex;
+  align-items:center;
+  gap:4px;
+  border:1px solid #292b34;
+  border-radius:7px;
+  padding:5px 7px;
+  color:#646773;
+  font-size:8px;
+  cursor:pointer;
+}
+.mini-lock.active {
+  color:#9a8cff;
+  border-color:#403961;
+  background:#171423;
+}
+.mini-lock input { display:none; }
+.icon-button {
+  width:28px;
+  height:28px;
+  display:grid;
+  place-items:center;
+  border:1px solid #292b34;
+  background:#14151a;
+  color:#676a75;
+  border-radius:8px;
+}
+.bible-name {
+  width:100%;
+  margin-top:10px;
+  border:0;
+  border-bottom:1px solid #282a32;
+  background:transparent;
+  color:#e1e2e7;
+  padding:4px 2px 8px;
+  outline:0;
+  font-size:14px;
+  font-weight:800;
+}
+.bible-fields {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:8px;
+  margin-top:10px;
+}
+.bible-fields label > span {
+  display:block;
+  color:#5e616c;
+  font-size:8px;
+  margin-bottom:4px;
+  text-transform:uppercase;
+  letter-spacing:.06em;
+}
+.bible-fields textarea {
+  min-height:70px;
+  padding:9px;
+  border-radius:9px;
+  font-size:10px;
+  line-height:1.55;
+}
+
+.bible-lock-preview {
+  margin-top:9px;
+  border-top:1px solid #252730;
+  padding-top:9px;
+}
+.bible-lock-preview span {
+  color:#625d7d;
+  font-size:8px;
+  font-weight:800;
+  text-transform:uppercase;
+  letter-spacing:.07em;
+}
+.bible-lock-preview p {
+  margin:5px 0 0;
+  color:#777986;
+  font-size:9px;
+  line-height:1.55;
+}
+
+.timeline-panel {
+  border:1px solid #272933;
+  background:#0c0d12;
+  border-radius:15px;
+  margin-bottom:12px;
+  padding:12px;
+}
+.timeline-head {
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:10px;
+  margin-bottom:10px;
+}
+.timeline-head span,
+.timeline-head strong {
+  display:block;
+}
+.timeline-head span {
+  display:flex;
+  align-items:center;
+  gap:6px;
+  color:#7465d1;
+  font-size:8px;
+  font-weight:900;
+  letter-spacing:.08em;
+}
+.timeline-head strong {
+  margin-top:3px;
+  color:#a6a8b2;
+  font-size:10px;
+}
+.timeline-head small {
+  color:#555863;
+  font-size:8px;
+}
+.timeline-track {
+  display:flex;
+  gap:6px;
+  min-height:104px;
+  overflow-x:auto;
+  padding-bottom:2px;
+}
+.timeline-shot {
+  min-width:116px;
+  max-width:220px;
+  border:1px solid #292b34;
+  background:#131419;
+  border-radius:10px;
+  padding:9px;
+  cursor:grab;
+  display:flex;
+  flex-direction:column;
+  gap:7px;
+  transition:.16s ease;
+}
+.timeline-shot:hover {
+  border-color:#4a426f;
+  transform:translateY(-1px);
+}
+.timeline-shot:active { cursor:grabbing; }
+.timeline-shot-top {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:6px;
+  color:#626571;
+  font-size:8px;
+}
+.timeline-shot-top span {
+  display:flex;
+  align-items:center;
+  gap:3px;
+}
+.timeline-shot strong {
+  color:#b5b7bf;
+  font-size:10px;
+  line-height:1.35;
+  display:-webkit-box;
+  -webkit-line-clamp:2;
+  -webkit-box-orient:vertical;
+  overflow:hidden;
+  flex:1;
+}
+.timeline-shot button {
+  border:1px solid #292b34;
+  background:#18191f;
+  color:#6f727e;
+  border-radius:7px;
+  padding:5px 6px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:4px;
+  font-size:8px;
+}
+.timeline-shot button:hover {
+  color:#a99cff;
+  border-color:#463e69;
+}
+.timeline-shot button:disabled { opacity:.55; cursor:not-allowed; }
+
+.shot-index {
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+.shot-regenerate {
+  border:1px solid #282a33;
+  background:#111217;
+  color:#686b76;
+  border-radius:7px;
+  padding:6px;
+  font-size:8px;
+  line-height:1.3;
+}
+.shot-regenerate:hover {
+  color:#9c8fff;
+  border-color:#433b64;
+}
+.shot-regenerate:disabled {
+  opacity:.5;
+  cursor:not-allowed;
+}
+
+@media (max-width:900px) {
+  .project-bar {
+    align-items:flex-start;
+    flex-direction:column;
+  }
+  .project-bar-left,
+  .project-bar-right {
+    width:100%;
+  }
+  .project-bar-left input { width:100%; }
+  .project-bar-right { justify-content:flex-start; }
+  .bible-grid { grid-template-columns:1fr; }
+}
+
+@media (max-width:560px) {
+  .bible-panel { width:min(100% - 24px,1180px); padding:14px; }
+  .bible-head { flex-direction:column; }
+  .bible-fields { grid-template-columns:1fr; }
+  .timeline-head { flex-direction:column; }
+  .timeline-track { min-height:116px; }
+}
