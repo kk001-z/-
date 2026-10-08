@@ -1,4 +1,4 @@
-# FramePilot V0.6 — 中国 AI 视频 Prompt Studio
+# FramePilot V0.7 — 中国 AI 视频 Prompt Studio
 
 FramePilot 是一个面向中文 AI 视频创作者的 **AI 导演 + 分镜师 + 参考素材反推 + Prompt Compiler**。
 
@@ -9,6 +9,26 @@ FramePilot 是一个面向中文 AI 视频创作者的 **AI 导演 + 分镜师 +
 3. 上传参考图片或参考视频，反推画面和运镜
 
 系统负责把这些输入统一编译成可执行的镜头方案，并转换成小云雀、即梦、可灵、LibTV、Vidu、海螺和 Wan 等平台可直接使用的提示词。
+
+## V0.7 新增
+
+- 可编辑分镜：
+  - 每镜直接修改时长
+  - 复制 Shot
+  - 删除 Shot
+  - 自动重编号与重新计算总时长
+- 单镜自定义重生成：
+  - 输入“这一镜想怎么改”
+  - 只请求该 Shot
+  - 保留 Character / Product Bible 与全局锁
+  - 其他镜头不重新调用 AI
+- Storyboard Undo：
+  - 拖拽排序
+  - 时长修改
+  - Shot 复制 / 删除
+  - 单镜 AI 重生成
+  - 都会进入撤销历史
+- 时间线继续与可编辑 Shot 保持同步
 
 ## V0.6 新增
 
