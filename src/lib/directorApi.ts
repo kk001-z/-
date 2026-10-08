@@ -3,6 +3,7 @@ import {
   applyGlobalLocks,
   type AnalysisResult,
   type InputMode,
+  type Shot,
 } from './promptEngine'
 import type { PlatformId } from './modelCatalog'
 import type { PreparedReference } from './media'
@@ -92,6 +93,46 @@ export async function analyzeReferenceWithDirector(
   return {
     result: data.result,
     engine: 'ai',
+    model: data.model,
+  }
+}
+
+
+export async function regenerateShotWithDirector(
+  shot: Shot,
+  platform: PlatformId,
+  locks = '',
+  projectContext = '',
+  instruction = '',
+): Promise<{ shot: Shot; model?: string }> {
+  const response = await fetch('/api/shot/regenerate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      shot,
+      platform,
+      locks,
+      projectContext,
+      instruction,
+    }),
+  })
+
+  const data = await response.json().catch(() => ({})) as {
+    shot?: Shot
+    model?: string
+    error?: string
+    message?: string
+  }
+
+  if (!response.ok || !data.shot) {
+    if (data.error === 'AI_NOT_CONFIGURED') {
+      throw new Error('单镜重生成需要 AI。请先在服务端 .env 中配置 OPENAI_API_KEY。')
+    }
+    throw new Error(data.message || '单镜重生成失败，请稍后重试。')
+  }
+
+  return {
+    shot: data.shot,
     model: data.model,
   }
 }
