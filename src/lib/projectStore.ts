@@ -9,6 +9,7 @@ export interface CharacterBible {
   wardrobe: string
   behavior: string
   locked: boolean
+  referenceAssetIds: string[]
 }
 
 export interface ProductBible {
@@ -20,6 +21,7 @@ export interface ProductBible {
   material: string
   branding: string
   locked: boolean
+  referenceAssetIds: string[]
 }
 
 export interface FramePilotProject {
@@ -42,29 +44,39 @@ function uid(prefix: string) {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
 
-export function createCharacter(): CharacterBible {
+function normalizeCharacter(item: Partial<CharacterBible>): CharacterBible {
   return {
-    id: uid('character'),
-    name: '主要人物',
-    identity: '',
-    appearance: '',
-    wardrobe: '',
-    behavior: '',
-    locked: true,
+    id: item.id || uid('character'),
+    name: item.name || '主要人物',
+    identity: item.identity || '',
+    appearance: item.appearance || '',
+    wardrobe: item.wardrobe || '',
+    behavior: item.behavior || '',
+    locked: item.locked !== false,
+    referenceAssetIds: Array.isArray(item.referenceAssetIds) ? item.referenceAssetIds : [],
   }
 }
 
-export function createProduct(): ProductBible {
+function normalizeProduct(item: Partial<ProductBible>): ProductBible {
   return {
-    id: uid('product'),
-    name: '核心产品',
-    category: '',
-    appearance: '',
-    structure: '',
-    material: '',
-    branding: '',
-    locked: true,
+    id: item.id || uid('product'),
+    name: item.name || '核心产品',
+    category: item.category || '',
+    appearance: item.appearance || '',
+    structure: item.structure || '',
+    material: item.material || '',
+    branding: item.branding || '',
+    locked: item.locked !== false,
+    referenceAssetIds: Array.isArray(item.referenceAssetIds) ? item.referenceAssetIds : [],
   }
+}
+
+export function createCharacter(): CharacterBible {
+  return normalizeCharacter({})
+}
+
+export function createProduct(): ProductBible {
+  return normalizeProduct({})
 }
 
 export function createProject(name = '未命名项目'): FramePilotProject {
@@ -83,13 +95,35 @@ export function createProject(name = '未命名项目'): FramePilotProject {
   }
 }
 
+export function normalizeProject(project: Partial<FramePilotProject>): FramePilotProject {
+  const now = Date.now()
+  return {
+    id: project.id || uid('project'),
+    name: project.name || '未命名项目',
+    createdAt: Number(project.createdAt) || now,
+    updatedAt: Number(project.updatedAt) || now,
+    platform: project.platform || 'xiaoyunque',
+    input: project.input || '',
+    locks: project.locks || '',
+    characters: Array.isArray(project.characters)
+      ? project.characters.map((item) => normalizeCharacter(item))
+      : [],
+    products: Array.isArray(project.products)
+      ? project.products.map((item) => normalizeProduct(item))
+      : [],
+    result: project.result && typeof project.result === 'object'
+      ? project.result as AnalysisResult
+      : null,
+  }
+}
+
 export function loadProjects(): FramePilotProject[] {
   try {
     const raw = localStorage.getItem(PROJECTS_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
-    return parsed.filter(Boolean) as FramePilotProject[]
+    return parsed.filter(Boolean).map((item) => normalizeProject(item))
   } catch {
     return []
   }
@@ -120,6 +154,9 @@ export function buildBibleLocks(
         item.appearance && `外观：${item.appearance}`,
         item.wardrobe && `服装：${item.wardrobe}`,
         item.behavior && `表演：${item.behavior}`,
+        item.referenceAssetIds.length
+          ? `绑定 ${item.referenceAssetIds.length} 张人物参考图`
+          : '',
       ].filter(Boolean).join('；')
       return details ? `人物「${item.name}」必须一致：${details}` : ''
     })
@@ -134,6 +171,9 @@ export function buildBibleLocks(
         item.structure && `结构：${item.structure}`,
         item.material && `材质：${item.material}`,
         item.branding && `品牌元素：${item.branding}`,
+        item.referenceAssetIds.length
+          ? `绑定 ${item.referenceAssetIds.length} 张产品参考图`
+          : '',
       ].filter(Boolean).join('；')
       return details ? `产品「${item.name}」必须一致：${details}` : ''
     })
