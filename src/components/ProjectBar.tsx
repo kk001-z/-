@@ -1,4 +1,4 @@
-import { FolderOpen, Plus, Save, Trash2 } from 'lucide-react'
+import { FileUp, FolderOpen, Plus, Save, Trash2 } from 'lucide-react'
 import type { FramePilotProject } from '../lib/projectStore'
 
 interface Props {
@@ -10,6 +10,7 @@ interface Props {
   onSave: () => void
   onSelect: (id: string) => void
   onDelete: (id: string) => void
+  onImport: (file: File) => void
 }
 
 export default function ProjectBar({
@@ -21,6 +22,7 @@ export default function ProjectBar({
   onSave,
   onSelect,
   onDelete,
+  onImport,
 }: Props) {
   return (
     <section className="project-bar shell">
@@ -53,6 +55,21 @@ export default function ProjectBar({
 
         <button onClick={onSave}><Save size={14} /> 保存项目</button>
         <button onClick={onCreate}><Plus size={14} /> 新建</button>
+
+        <label className="project-import">
+          <FileUp size={14} /> 导入 JSON
+          <input
+            hidden
+            type="file"
+            accept=".json,application/json"
+            onChange={(event) => {
+              const file = event.target.files?.[0]
+              if (file) onImport(file)
+              event.currentTarget.value = ''
+            }}
+          />
+        </label>
+
         {activeProjectId && (
           <button
             className="danger-lite"
