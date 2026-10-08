@@ -366,7 +366,25 @@ function App() {
   function exportJson() {
     if (!result) return
     const filename = `${safeFilename(result.title)}-${currentPlatform.short}.json`
-    downloadTextFile(filename, JSON.stringify(result, null, 2), 'application/json;charset=utf-8')
+    downloadTextFile(
+      filename,
+      JSON.stringify(
+        {
+          project: {
+            name: projectName,
+            platform,
+            manualLocks: locks,
+            bibleLocks,
+            characters,
+            products,
+          },
+          storyboard: result,
+        },
+        null,
+        2,
+      ),
+      'application/json;charset=utf-8',
+    )
   }
 
   function changeMode(next: WorkspaceMode) {
