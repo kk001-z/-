@@ -300,3 +300,55 @@ export function applyGlobalLocks(
 
   return recompileAnalysisResult(locked, targetPlatform)
 }
+
+
+export function reorderAnalysisShots(
+  result: AnalysisResult,
+  fromIndex: number,
+  toIndex: number,
+  targetPlatform: PlatformId = result.recommendedPlatform,
+): AnalysisResult {
+  if (
+    fromIndex === toIndex ||
+    fromIndex < 0 ||
+    toIndex < 0 ||
+    fromIndex >= result.shots.length ||
+    toIndex >= result.shots.length
+  ) {
+    return result
+  }
+
+  const shots = [...result.shots]
+  const [moved] = shots.splice(fromIndex, 1)
+  shots.splice(toIndex, 0, moved)
+
+  const normalized: AnalysisResult = {
+    ...result,
+    shots: shots.map((shot, index) => ({
+      ...shot,
+      id: index + 1,
+    })),
+  }
+
+  return recompileAnalysisResult(normalized, targetPlatform)
+}
+
+export function replaceAnalysisShot(
+  result: AnalysisResult,
+  shotId: number,
+  replacement: Shot,
+  targetPlatform: PlatformId = result.recommendedPlatform,
+): AnalysisResult {
+  const shots = result.shots.map((shot) =>
+    shot.id === shotId
+      ? { ...replacement, id: shot.id }
+      : shot,
+  )
+
+  const normalized: AnalysisResult = {
+    ...result,
+    shots,
+  }
+
+  return recompileAnalysisResult(normalized, targetPlatform)
+}
