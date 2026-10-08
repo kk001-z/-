@@ -343,7 +343,14 @@ export function replaceAnalysisShot(
 ): AnalysisResult {
   const shots = result.shots.map((shot) =>
     shot.id === shotId
-      ? { ...replacement, id: shot.id }
+      ? {
+          ...replacement,
+          id: shot.id,
+          referenceAssetIds:
+            replacement.referenceAssetIds?.length
+              ? replacement.referenceAssetIds
+              : shot.referenceAssetIds ?? [],
+        }
       : shot,
   )
 
