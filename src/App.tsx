@@ -30,11 +30,18 @@ import {
 } from 'lucide-react'
 import {
   applyGlobalLocks,
+  reorderAnalysisShots,
+  replaceAnalysisShot,
   recompileAnalysisResult,
   type AnalysisResult,
   type InputMode,
+  type Shot,
 } from './lib/promptEngine'
-import { analyzeReferenceWithDirector, analyzeWithDirector } from './lib/directorApi'
+import {
+  analyzeReferenceWithDirector,
+  analyzeWithDirector,
+  regenerateShotWithDirector,
+} from './lib/directorApi'
 import { defaultPlatform, type PlatformId, platforms } from './lib/modelCatalog'
 import {
   formatBytes,
@@ -48,6 +55,20 @@ import {
   storyboardToMarkdown,
   storyboardToPlainText,
 } from './lib/export'
+import {
+  buildBibleLocks,
+  createProject,
+  loadActiveProjectId,
+  loadProjects,
+  saveActiveProjectId,
+  saveProjects,
+  type CharacterBible,
+  type FramePilotProject,
+  type ProductBible,
+} from './lib/projectStore'
+import BiblePanel from './components/BiblePanel'
+import ProjectBar from './components/ProjectBar'
+import StoryTimeline from './components/StoryTimeline'
 
 type WorkspaceMode = InputMode | 'reference'
 type EngineState = 'ai' | 'local' | null
@@ -60,6 +81,9 @@ interface PersistedWorkspace {
   engine: EngineState
   engineModel: string
   locks: string
+  projectName?: string
+  characters?: CharacterBible[]
+  products?: ProductBible[]
 }
 
 const STORAGE_KEY = 'framepilot.workspace.v0.4'
@@ -86,6 +110,14 @@ function App() {
   const [referenceProgress, setReferenceProgress] = useState('')
   const [dragActive, setDragActive] = useState(false)
   const [hydrated, setHydrated] = useState(false)
+
+  const [projects, setProjects] = useState<FramePilotProject[]>([])
+  const [activeProjectId, setActiveProjectId] = useState('')
+  const [projectName, setProjectName] = useState('未命名项目')
+  const [characters, setCharacters] = useState<CharacterBible[]>([])
+  const [products, setProducts] = useState<ProductBible[]>([])
+  const [regeneratingShotId, setRegeneratingShotId] = useState<number | null>(null)
+
   const imageInputRef = useRef<HTMLInputElement>(null)
   const videoInputRef = useRef<HTMLInputElement>(null)
 
@@ -94,24 +126,46 @@ function App() {
     [platform],
   )
 
+  const bibleLocks = useMemo(
+    () => buildBibleLocks(characters, products),
+    [characters, products],
+  )
+
+  const effectiveLocks = useMemo(
+    () => [locks.trim(), bibleLocks.trim()].filter(Boolean).join('；'),
+    [locks, bibleLocks],
+  )
+
   const canRun = mode === 'reference' ? Boolean(reference) : Boolean(input.trim())
 
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY)
-      if (!raw) return
+      if (raw) {
+        const saved = JSON.parse(raw) as Partial<PersistedWorkspace>
+        const validMode = saved.mode === 'idea' || saved.mode === 'script' || saved.mode === 'reference'
+        const validPlatform = platforms.some((item) => item.id === saved.platform)
 
-      const saved = JSON.parse(raw) as Partial<PersistedWorkspace>
-      const validMode = saved.mode === 'idea' || saved.mode === 'script' || saved.mode === 'reference'
-      const validPlatform = platforms.some((item) => item.id === saved.platform)
+        if (validMode && saved.mode) setMode(saved.mode)
+        if (validPlatform && saved.platform) setPlatform(saved.platform)
+        if (typeof saved.input === 'string') setInput(saved.input)
+        if (saved.result && typeof saved.result === 'object') setResult(saved.result as AnalysisResult)
+        if (saved.engine === 'ai' || saved.engine === 'local') setEngine(saved.engine)
+        if (typeof saved.engineModel === 'string') setEngineModel(saved.engineModel)
+        if (typeof saved.locks === 'string') setLocks(saved.locks)
+        if (typeof saved.projectName === 'string') setProjectName(saved.projectName)
+        if (Array.isArray(saved.characters)) setCharacters(saved.characters)
+        if (Array.isArray(saved.products)) setProducts(saved.products)
+      }
 
-      if (validMode && saved.mode) setMode(saved.mode)
-      if (validPlatform && saved.platform) setPlatform(saved.platform)
-      if (typeof saved.input === 'string') setInput(saved.input)
-      if (saved.result && typeof saved.result === 'object') setResult(saved.result as AnalysisResult)
-      if (saved.engine === 'ai' || saved.engine === 'local') setEngine(saved.engine)
-      if (typeof saved.engineModel === 'string') setEngineModel(saved.engineModel)
-      if (typeof saved.locks === 'string') setLocks(saved.locks)
+      const storedProjects = loadProjects()
+      setProjects(storedProjects)
+
+      const storedActiveId = loadActiveProjectId()
+      const activeProject = storedProjects.find((item) => item.id === storedActiveId)
+      if (activeProject) {
+        applyProject(activeProject)
+      }
     } catch {
       localStorage.removeItem(STORAGE_KEY)
     } finally {
@@ -130,14 +184,110 @@ function App() {
       engine,
       engineModel,
       locks,
+      projectName,
+      characters,
+      products,
     }
 
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
     } catch {
-      // Ignore storage quota/private mode failures. The app itself should keep working.
+      // Ignore storage quota/private mode failures.
     }
-  }, [hydrated, mode, platform, input, result, engine, engineModel, locks])
+  }, [
+    hydrated,
+    mode,
+    platform,
+    input,
+    result,
+    engine,
+    engineModel,
+    locks,
+    projectName,
+    characters,
+    products,
+  ])
+
+  function applyProject(project: FramePilotProject) {
+    setActiveProjectId(project.id)
+    saveActiveProjectId(project.id)
+    setProjectName(project.name)
+    setPlatform(project.platform)
+    setInput(project.input || ideaExample)
+    setLocks(project.locks || '')
+    setCharacters(project.characters || [])
+    setProducts(project.products || [])
+    setResult(project.result || null)
+    setReference(null)
+    setNotice(`已打开项目「${project.name}」。`)
+  }
+
+  function saveCurrentProject() {
+    const now = Date.now()
+    const existing = projects.find((item) => item.id === activeProjectId)
+    const base = existing ?? createProject(projectName.trim() || '未命名项目')
+
+    const nextProject: FramePilotProject = {
+      ...base,
+      name: projectName.trim() || '未命名项目',
+      updatedAt: now,
+      platform,
+      input,
+      locks,
+      characters,
+      products,
+      result,
+    }
+
+    const nextProjects = existing
+      ? projects.map((item) => (item.id === existing.id ? nextProject : item))
+      : [nextProject, ...projects]
+
+    setProjects(nextProjects)
+    saveProjects(nextProjects)
+    setActiveProjectId(nextProject.id)
+    saveActiveProjectId(nextProject.id)
+    setNotice(`项目「${nextProject.name}」已保存到当前浏览器。`)
+  }
+
+  function createNewProject() {
+    const project = createProject('未命名项目')
+    setActiveProjectId(project.id)
+    saveActiveProjectId(project.id)
+    setProjectName(project.name)
+    setMode('idea')
+    setPlatform(defaultPlatform)
+    setInput(ideaExample)
+    setLocks('')
+    setCharacters([])
+    setProducts([])
+    setResult(null)
+    setReference(null)
+    setEngine(null)
+    setEngineModel('')
+    setNotice('已创建新项目。填写内容后点击“保存项目”。')
+  }
+
+  function deleteProject(id: string) {
+    const nextProjects = projects.filter((item) => item.id !== id)
+    setProjects(nextProjects)
+    saveProjects(nextProjects)
+
+    if (activeProjectId === id) {
+      const next = nextProjects[0]
+      if (next) {
+        applyProject(next)
+      } else {
+        setActiveProjectId('')
+        saveActiveProjectId('')
+        setProjectName('未命名项目')
+        setCharacters([])
+        setProducts([])
+        setResult(null)
+        setNotice('项目已删除。')
+      }
+    }
+  }
 
   async function runAnalysis() {
     if (!canRun || loading || preparingReference) return
@@ -148,8 +298,8 @@ function App() {
     try {
       const response =
         mode === 'reference' && reference
-          ? await analyzeReferenceWithDirector(reference, platform, input.trim(), locks)
-          : await analyzeWithDirector(input, mode as InputMode, platform, locks)
+          ? await analyzeReferenceWithDirector(reference, platform, input.trim(), effectiveLocks)
+          : await analyzeWithDirector(input, mode as InputMode, platform, effectiveLocks)
 
       setResult(response.result)
       setEngine(response.engine)
@@ -163,6 +313,37 @@ function App() {
     } finally {
       setLoading(false)
     }
+  }
+
+  async function regenerateShot(shot: Shot) {
+    if (!result || regeneratingShotId !== null) return
+
+    setRegeneratingShotId(shot.id)
+    setNotice('')
+
+    try {
+      const response = await regenerateShotWithDirector(
+        shot,
+        platform,
+        effectiveLocks,
+        input.trim(),
+        '保持当前镜头的剧情功能，优化镜头设计、动作可执行性和生成稳定性。',
+      )
+      setResult(replaceAnalysisShot(result, shot.id, response.shot, platform))
+      setEngine('ai')
+      if (response.model) setEngineModel(response.model)
+      setNotice(`SHOT ${String(shot.id).padStart(2, '0')} 已单独重生成，其他镜头未重新调用 AI。`)
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : '单镜重生成失败。')
+    } finally {
+      setRegeneratingShotId(null)
+    }
+  }
+
+  function reorderShots(fromIndex: number, toIndex: number) {
+    if (!result) return
+    setResult(reorderAnalysisShots(result, fromIndex, toIndex, platform))
+    setNotice('镜头顺序已调整，并已重新计算编号与时间轴。')
   }
 
   async function copyText(key: string, value: string) {
@@ -213,11 +394,29 @@ function App() {
     updateLocks(next)
   }
 
+  function updateCharacters(next: CharacterBible[]) {
+    setCharacters(next)
+    if (result) {
+      setResult(null)
+      setEngine(null)
+      setNotice('Character Bible 已修改，请重新分析以应用到全部镜头。')
+    }
+  }
+
+  function updateProducts(next: ProductBible[]) {
+    setProducts(next)
+    if (result) {
+      setResult(null)
+      setEngine(null)
+      setNotice('Product Bible 已修改，请重新分析以应用到全部镜头。')
+    }
+  }
+
   function selectPlatform(next: PlatformId) {
     setPlatform(next)
 
     if (result) {
-      setResult(applyGlobalLocks(recompileAnalysisResult(result, next), locks, next))
+      setResult(applyGlobalLocks(recompileAnalysisResult(result, next), effectiveLocks, next))
       setNotice('已在本地切换并重新编译目标平台 Prompt，无需再次调用 AI。')
     }
   }
@@ -270,17 +469,38 @@ function App() {
           <span>FramePilot</span>
           <span className="beta">CN · VIDEO AI</span>
         </div>
-        <div className="nav-note">AI 导演 · 分镜 · Reverse Prompt · Prompt Adapter</div>
+        <div className="nav-note">AI 导演 · Bible · Reverse Prompt · Timeline</div>
       </header>
 
+      <ProjectBar
+        projects={projects}
+        activeProjectId={activeProjectId}
+        projectName={projectName}
+        onProjectNameChange={setProjectName}
+        onCreate={createNewProject}
+        onSave={saveCurrentProject}
+        onSelect={(id) => {
+          const project = projects.find((item) => item.id === id)
+          if (project) applyProject(project)
+        }}
+        onDelete={deleteProject}
+      />
+
       <section className="hero shell">
-        <div className="eyebrow"><Sparkles size={14} /> 把“人话”和参考素材编译成 AI 视频方案</div>
+        <div className="eyebrow"><Sparkles size={14} /> 从想法到可执行 AI 视频项目</div>
         <h1>你负责想象，<br /><span>剩下的交给 AI 导演。</span></h1>
         <p className="hero-copy">
-          描述画面、粘贴剧本，或者直接上传参考图与参考视频。系统自动拆镜、反推画面与运镜，
-          再转换成小云雀、即梦、可灵、LibTV、Vidu、海螺与万相可用的提示词。
+          描述画面、粘贴剧本，或者上传参考图与参考视频。建立 Character / Product Bible，
+          系统自动拆镜、锁定一致性、生成时间轴，再编译成主流 AI 视频平台可用的 Prompt。
         </p>
       </section>
+
+      <BiblePanel
+        characters={characters}
+        products={products}
+        onCharactersChange={updateCharacters}
+        onProductsChange={updateProducts}
+      />
 
       <section className="workspace shell">
         <div className="composer card">
@@ -304,7 +524,7 @@ function App() {
               </div>
               <textarea
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
+                onChange={(event) => setInput(event.target.value)}
                 placeholder="例如：一个男生在雨夜骑摩托穿过城市，镜头贴近车身低机位跟拍……"
               />
 
@@ -358,7 +578,7 @@ function App() {
               <textarea
                 className="reference-context"
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
+                onChange={(event) => setInput(event.target.value)}
                 placeholder={referenceExample}
               />
             </>
@@ -409,14 +629,14 @@ function App() {
             <div className="consistency-lock-head">
               <div>
                 <span><LockKeyhole size={14} /> 一致性资产锁</span>
-                <strong>跨镜头绝对不能变的内容</strong>
+                <strong>补充跨镜头绝对不能变的内容</strong>
               </div>
-              <small>可选 · 会写入每个镜头</small>
+              <small>Bible 会自动叠加</small>
             </div>
             <textarea
               value={locks}
               onChange={(event) => updateLocks(event.target.value)}
-              placeholder="例如：同一位 25 岁亚洲男性，黑色短发；黑色冲锋衣全程不变；智飞钓箱外观、灰色箱盖、Logo、比例和金属件结构不得改变。"
+              placeholder="例如：钓箱灰色箱盖、Logo、比例和金属件结构不得改变。"
             />
             <div className="lock-presets">
               <button onClick={() => addLockPreset('人物身份、五官、发型和年龄特征全程一致')}>锁人物</button>
@@ -424,6 +644,12 @@ function App() {
               <button onClick={() => addLockPreset('产品结构、比例、颜色、Logo、接口和材质不得改变')}>锁产品</button>
               <button onClick={() => addLockPreset('场景布局、关键道具位置和人物空间关系保持连续')}>锁场景</button>
             </div>
+            {bibleLocks && (
+              <div className="bible-lock-preview">
+                <span>自动注入的 Bible Lock</span>
+                <p>{bibleLocks}</p>
+              </div>
+            )}
           </div>
 
           <button className="primary" onClick={runAnalysis} disabled={loading || preparingReference || !canRun}>
@@ -438,7 +664,7 @@ function App() {
 
           <div className="engine-hint">
             <span className="engine-dot" />
-            文本模式支持本地回退；图片 / 视频反推需要视觉 AI。一致性锁、草稿与最近一次分镜会自动保存在当前浏览器。
+            文本模式支持本地回退；图片 / 视频反推、单镜重生成需要视觉 / 文本 AI。项目与资产库保存在当前浏览器。
           </div>
 
           {notice && !result && <div className="notice composer-notice">{notice}</div>}
@@ -455,16 +681,16 @@ function App() {
               <div className="step"><span>01</span><div><strong>读取视觉素材</strong><p>识别人物、产品、场景、构图、材质与明显文字。</p></div></div>
               <div className="step"><span>02</span><div><strong>视频关键帧分析</strong><p>按时间顺序比较关键帧，判断动作、节奏和场景变化。</p></div></div>
               <div className="step"><span>03</span><div><strong>反推摄影语言</strong><p>估计景别、机位、光线与可确认的运镜，不强行猜测。</p></div></div>
-              <div className="step"><span>04</span><div><strong>锁定不可漂移元素</strong><p>人物身份、服装、产品结构、Logo、颜色和空间关系。</p></div></div>
-              <div className="step"><span>05</span><div><strong>编译目标平台 Prompt</strong><p>把反推结果转换成 Seedance、Kling、Vidu 等可直接使用的语言。</p></div></div>
+              <div className="step"><span>04</span><div><strong>套用 Bible</strong><p>把角色与产品锁定规则写入每个镜头，减少漂移。</p></div></div>
+              <div className="step"><span>05</span><div><strong>编译目标平台 Prompt</strong><p>转换成 Seedance、Kling、Vidu 等可直接使用的语言。</p></div></div>
             </>
           ) : (
             <>
               <div className="step"><span>01</span><div><strong>理解内容</strong><p>找出人物、场景、动作、产品、对白与情绪。</p></div></div>
               <div className="step"><span>02</span><div><strong>导演拆镜</strong><p>按视觉事件和情绪转折拆镜，而不是机械按句号切。</p></div></div>
-              <div className="step"><span>03</span><div><strong>连续性锁定</strong><p>锁定人物身份、服装、产品结构、位置与视线关系。</p></div></div>
-              <div className="step"><span>04</span><div><strong>首帧 + 视频 Prompt</strong><p>每镜同时产出首帧和图生视频指令。</p></div></div>
-              <div className="step"><span>05</span><div><strong>平台适配</strong><p>同一镜头自动编译成不同平台偏好的语言。</p></div></div>
+              <div className="step"><span>03</span><div><strong>读取 Bible</strong><p>角色、服装、产品与品牌规则贯穿所有镜头。</p></div></div>
+              <div className="step"><span>04</span><div><strong>生成时间轴</strong><p>每镜同时产出时长、首帧、视频 Prompt 与稳定性约束。</p></div></div>
+              <div className="step"><span>05</span><div><strong>局部迭代</strong><p>可拖拽排序或单独重生成某个镜头，不必重做整套方案。</p></div></div>
             </>
           )}
         </aside>
@@ -483,10 +709,11 @@ function App() {
               <div className={engine === 'ai' ? 'engine-status ai' : 'engine-status local'}>
                 <span />
                 {engine === 'ai'
-                  ? `AI Vision Director · ${engineModel || 'Responses API'}`
+                  ? `AI Director · ${engineModel || 'Responses API'}`
                   : 'Local Director · 演示回退模式'}
               </div>
             </div>
+
             <div className="result-tools">
               <div className="meta-pills">
                 <span>{result.shots.length} 镜头</span>
@@ -515,10 +742,26 @@ function App() {
             </div>
           </div>
 
+          <StoryTimeline
+            result={result}
+            regeneratingShotId={regeneratingShotId}
+            onReorder={reorderShots}
+            onRegenerate={(shot) => void regenerateShot(shot)}
+          />
+
           <div className="shot-list">
             {result.shots.map((shot) => (
               <article className="shot-card" key={shot.id}>
-                <div className="shot-index">SHOT {String(shot.id).padStart(2, '0')}</div>
+                <div className="shot-index">
+                  <span>SHOT {String(shot.id).padStart(2, '0')}</span>
+                  <button
+                    className="shot-regenerate"
+                    onClick={() => void regenerateShot(shot)}
+                    disabled={regeneratingShotId !== null}
+                  >
+                    {regeneratingShotId === shot.id ? '生成中…' : '单镜重生成'}
+                  </button>
+                </div>
                 <div className="shot-main">
                   <div className="shot-title-row">
                     <div>
@@ -576,8 +819,8 @@ function App() {
       )}
 
       <footer className="shell footer">
-        <span>FramePilot V0.5</span>
-        <span>Director + Reverse Prompt + Multi-model Compiler</span>
+        <span>FramePilot V0.6</span>
+        <span>Project Bible + Director + Reverse Prompt + Timeline</span>
       </footer>
     </main>
   )
