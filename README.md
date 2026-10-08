@@ -1,4 +1,4 @@
-# FramePilot V0.5 — 中国 AI 视频 Prompt Studio
+# FramePilot V0.6 — 中国 AI 视频 Prompt Studio
 
 FramePilot 是一个面向中文 AI 视频创作者的 **AI 导演 + 分镜师 + 参考素材反推 + Prompt Compiler**。
 
@@ -9,6 +9,45 @@ FramePilot 是一个面向中文 AI 视频创作者的 **AI 导演 + 分镜师 +
 3. 上传参考图片或参考视频，反推画面和运镜
 
 系统负责把这些输入统一编译成可执行的镜头方案，并转换成小云雀、即梦、可灵、LibTV、Vidu、海螺和 Wan 等平台可直接使用的提示词。
+
+## V0.6 新增
+
+- 项目级工作区：
+  - 新建项目
+  - 保存项目
+  - 切换项目
+  - 删除项目
+  - 项目保存在浏览器 LocalStorage
+- Character Bible：
+  - 身份
+  - 外观
+  - 服装
+  - 表演基线
+  - 可单独开启 / 关闭锁定
+- Product Bible：
+  - 品类
+  - 外观
+  - 结构
+  - 材质 / 品牌元素
+  - 可单独开启 / 关闭锁定
+- Bible 会自动编译为全局一致性锁并注入所有镜头
+- Storyboard Timeline：
+  - 按镜头时长展示
+  - HTML5 拖拽调整镜头顺序
+  - 自动重编号
+  - 自动重新计算时间轴
+- 单镜 AI 重生成：
+  - 只重做一个 Shot
+  - 其他镜头不重新请求 AI
+  - 保留项目 Bible 与一致性规则
+- JSON 导出升级为完整项目包：
+  - 项目名
+  - 平台
+  - 手动一致性锁
+  - Bible Lock
+  - Character Bible
+  - Product Bible
+  - Storyboard
 
 ## V0.5 新增
 
@@ -277,16 +316,16 @@ GET /api/health
 
 建议继续：
 
-1. Character Bible
-2. Product Lock
-3. 项目级人物 / 产品资产库
-4. 同一镜头一键切换平台而不重新分析
-5. 镜头拖拽排序
-6. 时间轴
-7. 单镜重新生成
-8. Prompt 版本历史
-9. 项目保存 / 恢复
-10. 导出完整分镜表
+1. Prompt / Shot 版本历史
+2. 单镜手动修改指令后重生成
+3. 项目资产参考图绑定到 Character / Product Bible
+4. 分镜表格视图与 CSV 导出
+5. 镜头时长直接编辑
+6. Shot 删除 / 复制 / 新增
+7. 项目导入 JSON
+8. 云端项目存储与登录
+9. 真实模型能力自动更新
+10. 直接调用视频生成 API（平台允许时）
 
 ## GitHub 参考思路
 
