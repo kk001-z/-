@@ -261,7 +261,7 @@ app.get('/api/health', (_request, response) => {
 })
 
 app.post('/api/director', async (request, response) => {
-  const { input, mode, platform, locks = '' } = request.body ?? {}
+  const { input, mode, platform, locks = '', referenceImages = [] } = request.body ?? {}
 
   if (typeof input !== 'string' || !input.trim()) {
     response.status(400).json({ error: 'input is required' })
@@ -288,10 +288,33 @@ app.post('/api/director', async (request, response) => {
   }
 
   try {
+    const directorReferenceImages = Array.isArray(referenceImages)
+      ? referenceImages.filter(isImageDataUrl).slice(0, 6)
+      : []
+
+    const directorInput = directorReferenceImages.length
+      ? [
+          {
+            role: 'user' as const,
+            content: [
+              {
+                type: 'input_text' as const,
+                text: `${input.trim()}\n\n以下图片来自项目 Character / Product Bible，是需要保持一致的视觉锚点。请用它们确认人物身份、产品结构、颜色、Logo、材质和比例，不要擅自重新设计。`,
+              },
+              ...directorReferenceImages.map((imageUrl: string) => ({
+                type: 'input_image' as const,
+                image_url: imageUrl,
+                detail: 'high' as const,
+              })),
+            ],
+          },
+        ]
+      : input.trim()
+
     const result = await client.responses.create({
       model: process.env.OPENAI_MODEL ?? 'gpt-6-luna',
       instructions: directorInstructions(platform, mode, asText(locks)),
-      input: input.trim(),
+      input: directorInput,
       text: structuredTextFormat(),
     })
 
@@ -324,6 +347,7 @@ app.post('/api/reverse', async (request, response) => {
     width,
     height,
     name = '',
+    lockedReferenceImages = [],
   } = request.body ?? {}
 
   if (kind !== 'image' && kind !== 'video') {
@@ -363,6 +387,16 @@ app.post('/api/reverse', async (request, response) => {
       image_url: imageUrl,
       detail: kind === 'image' ? ('high' as const) : ('low' as const),
     }))
+    const bibleVisualContent = Array.isArray(lockedReferenceImages)
+      ? lockedReferenceImages
+          .filter(isImageDataUrl)
+          .slice(0, 6)
+          .map((imageUrl: string) => ({
+            type: 'input_image' as const,
+            image_url: imageUrl,
+            detail: 'high' as const,
+          }))
+      : []
 
     const result = await client.responses.create({
       model: process.env.OPENAI_MODEL ?? 'gpt-6-luna',
@@ -376,6 +410,15 @@ app.post('/api/reverse', async (request, response) => {
               text: `请按提供顺序分析这些视觉素材。素材信息：${metadata || '无额外元数据'}。`,
             },
             ...visualContent,
+            ...(bibleVisualContent.length
+              ? [
+                  {
+                    type: 'input_text' as const,
+                    text: '下面是项目 Bible 的锁定参考图。它们不是原参考素材的时间序列，而是人物/产品一致性锚点。',
+                  },
+                  ...bibleVisualContent,
+                ]
+              : []),
           ],
         },
       ],
