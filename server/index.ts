@@ -256,6 +256,9 @@ app.get('/api/health', (_request, response) => {
       videoKeyframeReverse: true,
       singleShotRegeneration: true,
       projectBibles: true,
+      visualAssetLibrary: true,
+      shotReferenceImages: true,
+      projectImportExport: true,
     },
   })
 })
