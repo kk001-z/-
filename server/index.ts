@@ -404,6 +404,94 @@ app.post('/api/reverse', async (request, response) => {
   }
 })
 
+
+app.post('/api/shot/regenerate', async (request, response) => {
+  const {
+    shot,
+    platform,
+    locks = '',
+    projectContext = '',
+    instruction = '',
+  } = request.body ?? {}
+
+  if (!shot || typeof shot !== 'object') {
+    response.status(400).json({ error: 'shot is required' })
+    return
+  }
+
+  if (!isPlatformId(platform)) {
+    response.status(400).json({ error: 'invalid platform' })
+    return
+  }
+
+  const client = createClient()
+  if (!client) {
+    response.status(503).json({
+      error: 'AI_NOT_CONFIGURED',
+      message: 'Single-shot regeneration requires an AI model.',
+    })
+    return
+  }
+
+  try {
+    const platformInfo = platforms.find((item) => item.id === platform)!
+    const currentShot = normalizeShot(shot as Record<string, unknown>, 0)
+    const lockText = asText(locks)
+    const userInstruction = asText(instruction)
+    const contextText = asText(projectContext)
+
+    const result = await client.responses.create({
+      model: process.env.OPENAI_MODEL ?? 'gpt-6-luna',
+      instructions: `
+你是 FramePilot 的单镜头重设计导演。
+
+目标：只优化一个镜头，不改变整个项目的故事方向。
+目标平台：${platformInfo.name}
+默认模型：${platformInfo.models[0]}
+
+当前镜头：
+${JSON.stringify(currentShot, null, 2)}
+
+项目上下文：
+${contextText || '无额外项目上下文'}
+
+全局一致性锁：
+${lockText || '无额外一致性锁'}
+
+用户对这个镜头的修改要求：
+${userInstruction || '在不改变剧情意图的前提下，让镜头更专业、更可执行。'}
+
+要求：
+1. 保留当前镜头承担的剧情功能，除非用户明确要求改变。
+2. 只返回一个 shot。
+3. 明确主体、动作、场景、景别、机位、运镜、光线、情绪、对白、声音和连续性。
+4. 连续性必须兼容前后镜头，不得破坏全局锁。
+5. 不写空洞的“电影感”“高级感”堆词，要可执行。
+6. duration 控制在 1-12 秒。
+`.trim(),
+      input: `请重设计这个镜头：${currentShot.source}`,
+      text: structuredTextFormat(),
+    })
+
+    const parsed = parseStructuredOutput(result.output_text)
+    const plan = applyLocksToPlan(normalizePlan(parsed, 'idea', platform), lockText)
+    const compiled = compileDirectorPlan(plan, platform)
+    const replacement = compiled.shots[0]
+
+    response.json({
+      engine: 'ai',
+      model: process.env.OPENAI_MODEL ?? 'gpt-6-luna',
+      shot: replacement,
+    })
+  } catch (error) {
+    console.error(error)
+    response.status(500).json({
+      error: 'SHOT_REGENERATE_FAILED',
+      message: error instanceof Error ? error.message : 'Single-shot regeneration failed',
+    })
+  }
+})
+
 app.listen(port, '0.0.0.0', () => {
   console.log(`FramePilot Director API listening on http://localhost:${port}`)
 })
