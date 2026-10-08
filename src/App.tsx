@@ -825,6 +825,7 @@ function App() {
           if (project) applyProject(project)
         }}
         onDelete={deleteProject}
+        onImport={(file) => void importProjectBundle(file)}
       />
 
       <section className="hero shell">
@@ -841,6 +842,17 @@ function App() {
         products={products}
         onCharactersChange={updateCharacters}
         onProductsChange={updateProducts}
+      />
+
+      <AssetLibrary
+        assets={assets}
+        characters={characters}
+        products={products}
+        busy={assetBusy}
+        onUpload={(file) => void uploadAsset(file)}
+        onDelete={(assetId) => void removeAsset(assetId)}
+        onBind={bindAsset}
+        onUnbind={unbindAsset}
       />
 
       <section className="workspace shell">
@@ -1070,7 +1082,8 @@ function App() {
                   {copied === 'all' ? '已复制' : '复制全部'}
                 </button>
                 <button onClick={exportMarkdown}><Download size={14} /> 导出 MD</button>
-                <button onClick={exportJson}><FileJson size={14} /> 导出 JSON</button>
+                <button onClick={exportCsv}><Download size={14} /> 导出 CSV</button>
+                <button onClick={exportJson}><FileJson size={14} /> 导出项目 JSON</button>
               </div>
             </div>
           </div>
@@ -1123,12 +1136,14 @@ function App() {
 
                   <ShotEditTools
                     shot={shot}
+                    assets={assets}
                     busy={regeneratingShotId === shot.id}
                     canDelete={result.shots.length > 1}
                     onRegenerate={(targetShot, instruction) => void regenerateShot(targetShot, instruction)}
                     onDuplicate={duplicateShot}
                     onDelete={deleteShot}
                     onDurationChange={changeShotDuration}
+                    onAssetIdsChange={changeShotAssets}
                   />
 
                   <PromptBlock
@@ -1166,8 +1181,8 @@ function App() {
       )}
 
       <footer className="shell footer">
-        <span>FramePilot V0.7</span>
-        <span>Project Bible + Director + Reverse Prompt + Timeline</span>
+        <span>FramePilot V0.8</span>
+        <span>Visual Assets + Project Bible + Director + Timeline</span>
       </footer>
     </main>
   )
