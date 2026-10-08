@@ -923,3 +923,114 @@ textarea.reference-context { min-height:94px; }
   .timeline-head { flex-direction:column; }
   .timeline-track { min-height:116px; }
 }
+
+
+.export-actions button:disabled {
+  opacity:.4;
+  cursor:not-allowed;
+}
+
+.shot-edit-tools {
+  border:1px solid #272932;
+  background:#0c0d12;
+  border-radius:11px;
+  padding:9px;
+  margin:0 0 10px;
+}
+.shot-edit-row {
+  display:flex;
+  align-items:center;
+  gap:6px;
+  flex-wrap:wrap;
+}
+.shot-edit-row label {
+  display:flex;
+  align-items:center;
+  gap:5px;
+  border:1px solid #292b34;
+  background:#131419;
+  border-radius:8px;
+  padding:5px 7px;
+  color:#656874;
+  font-size:8px;
+}
+.shot-edit-row label span {
+  text-transform:uppercase;
+  letter-spacing:.06em;
+}
+.shot-edit-row label input {
+  width:38px;
+  border:0;
+  background:transparent;
+  color:#c5c7ce;
+  outline:0;
+  text-align:right;
+  font-size:9px;
+}
+.shot-edit-row label small {
+  color:#555862;
+  font-size:8px;
+}
+.shot-edit-row > button {
+  display:flex;
+  align-items:center;
+  gap:5px;
+  border:1px solid #292b34;
+  background:#131419;
+  color:#6f727d;
+  border-radius:8px;
+  padding:6px 8px;
+  font-size:8px;
+}
+.shot-edit-row > button:hover {
+  color:#aaa0ff;
+  border-color:#443d64;
+}
+.shot-edit-row > button.delete-shot:hover {
+  color:#c78b99;
+  border-color:#553841;
+}
+.shot-edit-row > button:disabled {
+  opacity:.35;
+  cursor:not-allowed;
+}
+.shot-revision {
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:6px;
+  margin-top:7px;
+}
+.shot-revision input {
+  min-width:0;
+  border:1px solid #292b34;
+  background:#111217;
+  color:#b2b4bd;
+  border-radius:8px;
+  outline:0;
+  padding:8px 9px;
+  font-size:9px;
+}
+.shot-revision input:focus {
+  border-color:#524773;
+}
+.shot-revision button {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:5px;
+  border:1px solid #403961;
+  background:#171423;
+  color:#9889f4;
+  border-radius:8px;
+  padding:7px 9px;
+  font-size:8px;
+  font-weight:700;
+}
+.shot-revision button:disabled {
+  opacity:.5;
+  cursor:not-allowed;
+}
+
+@media (max-width:620px) {
+  .shot-revision { grid-template-columns:1fr; }
+}
