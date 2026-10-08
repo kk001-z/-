@@ -35,6 +35,7 @@ import {
   reorderAnalysisShots,
   replaceAnalysisShot,
   recompileAnalysisResult,
+  updateAnalysisShotAssets,
   updateAnalysisShotDuration,
   type AnalysisResult,
   type InputMode,
@@ -55,6 +56,7 @@ import {
 import {
   downloadTextFile,
   safeFilename,
+  storyboardToCsv,
   storyboardToMarkdown,
   storyboardToPlainText,
 } from './lib/export'
@@ -63,16 +65,26 @@ import {
   createProject,
   loadActiveProjectId,
   loadProjects,
+  normalizeProject,
   saveActiveProjectId,
   saveProjects,
   type CharacterBible,
   type FramePilotProject,
   type ProductBible,
 } from './lib/projectStore'
+import {
+  createProjectAsset,
+  deleteProjectAsset,
+  deleteProjectAssets,
+  importProjectAssets,
+  listProjectAssets,
+  type ProjectAsset,
+} from './lib/assetStore'
 import BiblePanel from './components/BiblePanel'
 import ProjectBar from './components/ProjectBar'
 import StoryTimeline from './components/StoryTimeline'
 import ShotEditTools from './components/ShotEditTools'
+import AssetLibrary from './components/AssetLibrary'
 
 type WorkspaceMode = InputMode | 'reference'
 type EngineState = 'ai' | 'local' | null
@@ -122,6 +134,8 @@ function App() {
   const [products, setProducts] = useState<ProductBible[]>([])
   const [regeneratingShotId, setRegeneratingShotId] = useState<number | null>(null)
   const [resultHistory, setResultHistory] = useState<AnalysisResult[]>([])
+  const [assets, setAssets] = useState<ProjectAsset[]>([])
+  const [assetBusy, setAssetBusy] = useState(false)
 
   const imageInputRef = useRef<HTMLInputElement>(null)
   const videoInputRef = useRef<HTMLInputElement>(null)
