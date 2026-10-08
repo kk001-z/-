@@ -1,25 +1,31 @@
 import { CopyPlus, RefreshCw, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import type { Shot } from '../lib/promptEngine'
+import type { ProjectAsset } from '../lib/assetStore'
+import ShotReferencePicker from './ShotReferencePicker'
 
 interface Props {
   shot: Shot
+  assets: ProjectAsset[]
   busy: boolean
   canDelete: boolean
   onRegenerate: (shot: Shot, instruction: string) => void
   onDuplicate: (shotId: number) => void
   onDelete: (shotId: number) => void
   onDurationChange: (shotId: number, duration: number) => void
+  onAssetIdsChange: (shotId: number, ids: string[]) => void
 }
 
 export default function ShotEditTools({
   shot,
+  assets,
   busy,
   canDelete,
   onRegenerate,
   onDuplicate,
   onDelete,
   onDurationChange,
+  onAssetIdsChange,
 }: Props) {
   const [instruction, setInstruction] = useState('')
 
@@ -51,6 +57,12 @@ export default function ShotEditTools({
           <Trash2 size={13} /> 删除
         </button>
       </div>
+
+      <ShotReferencePicker
+        assets={assets}
+        selectedAssetIds={shot.referenceAssetIds ?? []}
+        onChange={(ids) => onAssetIdsChange(shot.id, ids)}
+      />
 
       <div className="shot-revision">
         <input
