@@ -173,8 +173,14 @@ function App() {
         if (typeof saved.engineModel === 'string') setEngineModel(saved.engineModel)
         if (typeof saved.locks === 'string') setLocks(saved.locks)
         if (typeof saved.projectName === 'string') setProjectName(saved.projectName)
-        if (Array.isArray(saved.characters)) setCharacters(saved.characters)
-        if (Array.isArray(saved.products)) setProducts(saved.products)
+        if (Array.isArray(saved.characters) || Array.isArray(saved.products)) {
+          const normalizedWorkspace = normalizeProject({
+            characters: Array.isArray(saved.characters) ? saved.characters : [],
+            products: Array.isArray(saved.products) ? saved.products : [],
+          })
+          setCharacters(normalizedWorkspace.characters)
+          setProducts(normalizedWorkspace.products)
+        }
       }
 
       const storedProjects = loadProjects()
@@ -227,6 +233,15 @@ function App() {
     products,
   ])
 
+  async function refreshProjectAssets(projectId: string) {
+    try {
+      setAssets(await listProjectAssets(projectId))
+    } catch (error) {
+      setAssets([])
+      setNotice(error instanceof Error ? error.message : '读取项目参考图失败。')
+    }
+  }
+
   function applyProject(project: FramePilotProject) {
     setActiveProjectId(project.id)
     saveActiveProjectId(project.id)
@@ -237,8 +252,31 @@ function App() {
     setCharacters(project.characters || [])
     setProducts(project.products || [])
     setResult(project.result || null)
+    setResultHistory([])
     setReference(null)
+    void refreshProjectAssets(project.id)
     setNotice(`已打开项目「${project.name}」。`)
+  }
+
+  function ensureActiveProject() {
+    const existing = projects.find((item) => item.id === activeProjectId)
+    if (existing) return existing
+
+    const project: FramePilotProject = {
+      ...createProject(projectName.trim() || '未命名项目'),
+      platform,
+      input,
+      locks,
+      characters,
+      products,
+      result,
+    }
+    const nextProjects = [project, ...projects]
+    setProjects(nextProjects)
+    saveProjects(nextProjects)
+    setActiveProjectId(project.id)
+    saveActiveProjectId(project.id)
+    return project
   }
 
   function saveCurrentProject() {
@@ -271,6 +309,9 @@ function App() {
 
   function createNewProject() {
     const project = createProject('未命名项目')
+    const nextProjects = [project, ...projects]
+    setProjects(nextProjects)
+    saveProjects(nextProjects)
     setActiveProjectId(project.id)
     saveActiveProjectId(project.id)
     setProjectName(project.name)
@@ -280,14 +321,17 @@ function App() {
     setLocks('')
     setCharacters([])
     setProducts([])
+    setAssets([])
     setResult(null)
+    setResultHistory([])
     setReference(null)
     setEngine(null)
     setEngineModel('')
-    setNotice('已创建新项目。填写内容后点击“保存项目”。')
+    setNotice('已创建新项目。项目资产现在可以立即上传，其他内容会自动保留在当前工作区。')
   }
 
   function deleteProject(id: string) {
+    void deleteProjectAssets(id)
     const nextProjects = projects.filter((item) => item.id !== id)
     setProjects(nextProjects)
     saveProjects(nextProjects)
@@ -302,7 +346,9 @@ function App() {
         setProjectName('未命名项目')
         setCharacters([])
         setProducts([])
+        setAssets([])
         setResult(null)
+        setResultHistory([])
         setNotice('项目已删除。')
       }
     }
