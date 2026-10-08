@@ -104,6 +104,7 @@ export async function regenerateShotWithDirector(
   locks = '',
   projectContext = '',
   instruction = '',
+  referenceImages: string[] = [],
 ): Promise<{ shot: Shot; model?: string }> {
   const response = await fetch('/api/shot/regenerate', {
     method: 'POST',
@@ -114,6 +115,7 @@ export async function regenerateShotWithDirector(
       locks,
       projectContext,
       instruction,
+      referenceImages,
     }),
   })
 
