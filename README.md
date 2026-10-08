@@ -1,4 +1,4 @@
-# FramePilot V0.7 — 中国 AI 视频 Prompt Studio
+# FramePilot V0.8 — 中国 AI 视频 Prompt Studio
 
 FramePilot 是一个面向中文 AI 视频创作者的 **AI 导演 + 分镜师 + 参考素材反推 + Prompt Compiler**。
 
@@ -9,6 +9,29 @@ FramePilot 是一个面向中文 AI 视频创作者的 **AI 导演 + 分镜师 +
 3. 上传参考图片或参考视频，反推画面和运镜
 
 系统负责把这些输入统一编译成可执行的镜头方案，并转换成小云雀、即梦、可灵、LibTV、Vidu、海螺和 Wan 等平台可直接使用的提示词。
+
+## V0.8 新增
+
+- 项目视觉参考图资产库
+  - JPG / PNG / WEBP
+  - 图片存储在浏览器 IndexedDB，而不是 LocalStorage
+  - 项目切换时自动读取对应资产
+- Character / Product Bible 视觉绑定
+  - 同一张参考图可绑定到人物或产品 Bible
+  - Bible 文本锁与视觉参考图同时参与导演分析
+- AI Director 视觉锚点
+  - 完整剧本 / 画面分析时可把 Bible 参考图一起发送给视觉 AI
+  - 参考视频反推时明确区分“视频关键帧”和“Bible 锁定参考图”
+- Shot 级参考图
+  - 每个 Shot 可单独绑定最多 6 张项目参考图
+  - 单镜重生成时真正把这些图片传入视觉 AI
+  - 重生成后保留素材绑定
+- 项目 JSON 导入 / 导出
+  - 导出包含 Character Bible、Product Bible、Storyboard 和参考图数据
+  - 导入时自动重建项目与 IndexedDB 参考图
+  - 自动重新映射 Asset ID，避免重复导入覆盖旧项目
+- CSV 分镜表导出
+  - 镜头、时长、景别、运镜、主体、动作、对白、首帧 Prompt、视频 Prompt、参考素材 ID 等字段
 
 ## V0.7 新增
 
@@ -336,15 +359,15 @@ GET /api/health
 
 建议继续：
 
-1. Prompt / Shot 版本历史
-2. 单镜手动修改指令后重生成
-3. 项目资产参考图绑定到 Character / Product Bible
-4. 分镜表格视图与 CSV 导出
-5. 镜头时长直接编辑
-6. Shot 删除 / 复制 / 新增
-7. 项目导入 JSON
-8. 云端项目存储与登录
-9. 真实模型能力自动更新
+1. Shot 版本历史面板与任意版本恢复
+2. 分镜表格视图
+3. Character / Product 多角度参考图角色标注（正面 / 侧面 / 结构 / Logo）
+4. 项目资产拖拽到 Shot
+5. Shot 新增空镜 / 插入镜头
+6. JSON 项目增量升级与版本迁移
+7. 云端项目存储与登录
+8. 模型能力配置远程更新
+9. 生成成本估算
 10. 直接调用视频生成 API（平台允许时）
 
 ## GitHub 参考思路
