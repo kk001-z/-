@@ -254,6 +254,8 @@ app.get('/api/health', (_request, response) => {
       textDirector: true,
       imageReverse: true,
       videoKeyframeReverse: true,
+      singleShotRegeneration: true,
+      projectBibles: true,
     },
   })
 })
