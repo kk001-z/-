@@ -1277,3 +1277,38 @@ textarea.reference-context { min-height:94px; }
   .asset-library-head { flex-direction:column; }
   .asset-grid { grid-template-columns:1fr 1fr; }
 }
+
+
+.topbar-actions {
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+.share-site-button {
+  border:1px solid #30323c;
+  background:#121318;
+  color:#9a9ca7;
+  border-radius:9px;
+  padding:8px 10px;
+  display:flex;
+  align-items:center;
+  gap:6px;
+  font-size:10px;
+  font-weight:700;
+}
+.share-site-button:hover {
+  border-color:#4a426f;
+  color:#c9c5ef;
+}
+.share-project-button {
+  border-color:#453e67 !important;
+  background:#171423 !important;
+  color:#aa9cff !important;
+}
+
+@media (max-width:700px) {
+  .topbar-actions .nav-note { display:none; }
+  .share-site-button { padding:8px; }
+  .share-site-button { font-size:0; }
+  .share-site-button svg { width:15px; height:15px; }
+}
