@@ -1,4 +1,4 @@
-# FramePilot V0.8 — 中国 AI 视频 Prompt Studio
+# FramePilot V0.9 — 中国 AI 视频 Prompt Studio
 
 FramePilot 是一个面向中文 AI 视频创作者的 **AI 导演 + 分镜师 + 参考素材反推 + Prompt Compiler**。
 
@@ -9,6 +9,36 @@ FramePilot 是一个面向中文 AI 视频创作者的 **AI 导演 + 分镜师 +
 3. 上传参考图片或参考视频，反推画面和运镜
 
 系统负责把这些输入统一编译成可执行的镜头方案，并转换成小云雀、即梦、可灵、LibTV、Vidu、海螺和 Wan 等平台可直接使用的提示词。
+
+## V0.9 新增
+
+- 生产网页模式
+  - 根目录 `server.ts` 同时托管 Vite 前端与 Express API
+  - `npm run build && npm start` 可直接模拟生产
+  - 已针对 Vercel 2026 Node/Express 零配置部署结构整理
+- 网页分享
+  - 顶部「分享网站」
+  - 支持浏览器原生 Share API
+  - 不支持原生分享时自动复制链接
+- 项目方案分享
+  - 结果区「分享当前方案」
+  - 使用 LZ 压缩把项目文本快照写入 URL hash
+  - 对方打开即可恢复平台、输入、Bible 与 Storyboard
+  - 分享链接不携带参考图二进制，避免隐私与超长 URL
+- 分享快照打开模式
+  - 不要求账号
+  - 不覆盖原项目
+  - 可以继续编辑并另存为自己的本地项目
+- 社交分享元信息
+  - Open Graph
+  - Twitter Card
+- 生产 CI
+  - Vite Build
+  - 本地 Director API Smoke Test
+  - 正式生产 Web Server 首页 Smoke Test
+  - 正式 `/api/health` Smoke Test
+
+详细部署步骤见 `DEPLOY.md`。
 
 ## V0.8 新增
 
