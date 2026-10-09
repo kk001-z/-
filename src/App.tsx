@@ -23,6 +23,7 @@ import {
   LockKeyhole,
   Play,
   ScanSearch,
+  Share2,
   Sparkles,
   Upload,
   WandSparkles,
@@ -85,6 +86,12 @@ import ProjectBar from './components/ProjectBar'
 import StoryTimeline from './components/StoryTimeline'
 import ShotEditTools from './components/ShotEditTools'
 import AssetLibrary from './components/AssetLibrary'
+import {
+  createShareUrl,
+  isLocalShareUrl,
+  readShareSnapshot,
+  shareUrl,
+} from './lib/share'
 
 type WorkspaceMode = InputMode | 'reference'
 type EngineState = 'ai' | 'local' | null
@@ -136,6 +143,7 @@ function App() {
   const [resultHistory, setResultHistory] = useState<AnalysisResult[]>([])
   const [assets, setAssets] = useState<ProjectAsset[]>([])
   const [assetBusy, setAssetBusy] = useState(false)
+  const [shareState, setShareState] = useState('')
 
   const imageInputRef = useRef<HTMLInputElement>(null)
   const videoInputRef = useRef<HTMLInputElement>(null)
@@ -174,6 +182,31 @@ function App() {
 
   useEffect(() => {
     try {
+      const shared = readShareSnapshot()
+      if (shared) {
+        const normalizedShared = normalizeProject({
+          name: shared.projectName,
+          platform: shared.platform,
+          input: shared.input,
+          locks: shared.locks,
+          characters: shared.characters,
+          products: shared.products,
+          result: shared.result,
+        })
+        setProjectName(`${normalizedShared.name} · 分享快照`)
+        setPlatform(normalizedShared.platform)
+        setInput(normalizedShared.input || ideaExample)
+        setLocks(normalizedShared.locks)
+        setCharacters(normalizedShared.characters)
+        setProducts(normalizedShared.products)
+        setResult(normalizedShared.result)
+        setEngine(null)
+        setAssets([])
+        setNotice('已打开分享方案。分享链接不包含本地参考图片，如需继续编辑可保存为自己的项目。')
+        setHydrated(true)
+        return
+      }
+
       const raw = localStorage.getItem(STORAGE_KEY)
       if (raw) {
         const saved = JSON.parse(raw) as Partial<PersistedWorkspace>
@@ -579,6 +612,53 @@ function App() {
     setNotice('已解除 Bible 参考图绑定。')
   }
 
+  async function shareCurrentProject() {
+    const url = createShareUrl({
+      version: 1,
+      createdAt: Date.now(),
+      projectName,
+      platform,
+      input,
+      locks,
+      characters,
+      products,
+      result,
+    })
+
+    if (isLocalShareUrl(url)) {
+      await navigator.clipboard.writeText(url)
+      setShareState('local')
+      setNotice('分享链接已生成，但当前仍是 localhost。本项目部署到公网后，同一个“分享当前方案”按钮会生成真正可访问的公开链接。')
+      setTimeout(() => setShareState(''), 1800)
+      return
+    }
+
+    const status = await shareUrl(projectName || 'FramePilot 项目', url)
+    if (status === 'copied') {
+      setShareState('copied')
+      setNotice('分享链接已复制。对方打开链接即可看到这套文字/Bible/Storyboard 快照。')
+    } else if (status === 'shared') {
+      setShareState('shared')
+      setNotice('分享面板已打开。')
+    }
+    setTimeout(() => setShareState(''), 1800)
+  }
+
+  async function shareWebsite() {
+    const url = new URL(window.location.href)
+    url.hash = ''
+    url.search = ''
+
+    if (isLocalShareUrl(url.toString())) {
+      await navigator.clipboard.writeText(url.toString())
+      setNotice('当前还是本地地址。部署到公网后，这个按钮会直接分享正式网站地址。')
+      return
+    }
+
+    const status = await shareUrl('FramePilot', url.toString())
+    if (status === 'copied') setNotice('网站链接已复制。')
+  }
+
   async function copyText(key: string, value: string) {
     await navigator.clipboard.writeText(value)
     setCopied(key)
@@ -810,7 +890,12 @@ function App() {
           <span>FramePilot</span>
           <span className="beta">CN · VIDEO AI</span>
         </div>
-        <div className="nav-note">AI 导演 · Bible · Reverse Prompt · Timeline</div>
+        <div className="topbar-actions">
+          <div className="nav-note">AI 导演 · Bible · Reverse Prompt · Timeline</div>
+          <button className="share-site-button" onClick={() => void shareWebsite()}>
+            <Share2 size={14} /> 分享网站
+          </button>
+        </div>
       </header>
 
       <ProjectBar
@@ -1074,6 +1159,10 @@ function App() {
                 <span>{result.recommendedModel}</span>
               </div>
               <div className="export-actions">
+                <button className="share-project-button" onClick={() => void shareCurrentProject()}>
+                  <Share2 size={14} />
+                  {shareState ? '链接已生成' : '分享当前方案'}
+                </button>
                 <button onClick={undoStoryboardChange} disabled={!resultHistory.length}>
                   撤销{resultHistory.length ? ` (${resultHistory.length})` : ''}
                 </button>
@@ -1181,7 +1270,7 @@ function App() {
       )}
 
       <footer className="shell footer">
-        <span>FramePilot V0.8</span>
+        <span>FramePilot V0.9</span>
         <span>Visual Assets + Project Bible + Director + Timeline</span>
       </footer>
     </main>
