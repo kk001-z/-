@@ -31,3 +31,12 @@ jobs:
           sleep 5
           curl --fail http://127.0.0.1:8787/api/health
           kill $API_PID || true
+
+      - name: Smoke test production web server
+        run: |
+          PORT=3000 npm start > /tmp/framepilot-web.log 2>&1 &
+          WEB_PID=$!
+          sleep 5
+          curl --fail http://127.0.0.1:3000/
+          curl --fail http://127.0.0.1:3000/api/health
+          kill $WEB_PID || true
