@@ -1,8 +1,9 @@
 name: Deploy GitHub Pages
 
+# GitHub Pages has not been enabled in repository settings yet.
+# This workflow is kept for the future official github.io domain, but does
+# not run on every push so it cannot create misleading failed checks.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
