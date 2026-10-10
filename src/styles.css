@@ -1312,3 +1312,48 @@ textarea.reference-context { min-height:94px; }
   .share-site-button { font-size:0; }
   .share-site-button svg { width:15px; height:15px; }
 }
+
+
+.public-demo-banner {
+  margin-top:12px;
+  margin-bottom:4px;
+  border:1px solid #3a3354;
+  background:linear-gradient(90deg,rgba(86,69,150,.16),rgba(20,21,28,.92));
+  border-radius:12px;
+  padding:10px 12px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:14px;
+}
+.public-demo-banner > div {
+  min-width:0;
+}
+.public-demo-banner strong {
+  display:block;
+  color:#b7aaff;
+  font-size:10px;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  margin-bottom:3px;
+}
+.public-demo-banner span {
+  display:block;
+  color:#8c8f99;
+  font-size:10px;
+  line-height:1.5;
+}
+.public-demo-banner small {
+  flex:0 0 auto;
+  color:#656874;
+  font-size:8px;
+  text-align:right;
+}
+
+@media (max-width:720px) {
+  .public-demo-banner {
+    align-items:flex-start;
+    flex-direction:column;
+  }
+  .public-demo-banner small { text-align:left; }
+}
