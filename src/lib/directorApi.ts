@@ -24,6 +24,7 @@ export async function analyzeWithDirector(
 ): Promise<DirectorResponse> {
   try {
     const response = await fetch('/api/director', {
+      signal: AbortSignal.timeout(45000),
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ input, mode, platform, locks, referenceImages }),

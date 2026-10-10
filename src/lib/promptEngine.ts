@@ -1,5 +1,7 @@
 import { PlatformId, platforms } from './modelCatalog'
 
+export type GenerationMode = 'text-to-video' | 'image-to-video' | 'reference-to-video'
+
 export type InputMode = 'idea' | 'script'
 
 export interface DirectorShot {
@@ -44,6 +46,8 @@ export interface AnalysisResult {
   recommendedModel: string
   reason: string
   shots: Shot[]
+  generationMode?: GenerationMode
+  outputModel?: string
 }
 
 const clean = (text: string) =>
@@ -60,6 +64,8 @@ function splitToBeats(text: string, mode: InputMode): string[] {
     .split(mode === 'script' ? /\n+|(?<=[。！？!?；;])/ : /(?<=[。！？!?；;，,])/)
     .map((s) => s.trim())
     .filter((s) => s.length > 2)
+
+  if (mode === 'script' && rough.length === 1) return rough
 
   if (rough.length <= 1) {
     return normalized
@@ -263,7 +269,7 @@ export function recompileAnalysisResult(
     referenceAssetIds: Array.isArray(shot.referenceAssetIds) ? shot.referenceAssetIds : [],
   }))
 
-  return compileDirectorPlan(
+  return configureGeneration(compileDirectorPlan(
     {
       title: result.title,
       summary: result.summary,
@@ -274,7 +280,7 @@ export function recompileAnalysisResult(
       shots,
     },
     targetPlatform,
-  )
+  ), result.outputModel, result.generationMode)
 }
 
 
@@ -437,4 +443,20 @@ export function updateAnalysisShotAssets(
         : shot,
     ),
   }
+}
+
+
+export function configureGeneration(result: AnalysisResult, model?: string, mode: GenerationMode = 'image-to-video'): AnalysisResult {
+  const catalog = platforms.find(p => p.id === result.recommendedPlatform)!
+  const outputModel = model && catalog.models.includes(model) ? model : catalog.models[0]
+  return { ...result, outputModel, recommendedModel: outputModel, generationMode: mode,
+    shots: result.shots.map(shot => {
+      const base = platformPrompt(result.recommendedPlatform, shot)
+      const prompt = mode === 'text-to-video'
+        ? `文生视频：主体外观：${shot.subject}。${base.replace(/图生视频时以首帧为唯一外观基准，只描述动作、物理变化与镜头运动。/g, '')}`
+        : mode === 'reference-to-video'
+        ? `参考图生视频：分别提供已绑定的人物、产品或场景参考图作为外观锚点。${base.replace(/以首帧为唯一外观基准/g, '以提供的参考图为外观基准')}`
+        : `图生视频：先生成并上传本镜首帧，以首帧为外观基准。${base}`
+      return { ...shot, videoPrompt: prompt }
+    }) }
 }

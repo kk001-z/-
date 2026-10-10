@@ -1357,3 +1357,14 @@ textarea.reference-context { min-height:94px; }
   }
   .public-demo-banner small { text-align:left; }
 }
+
+.generation-controls { display:grid; gap:12px; margin:20px 0; }
+.generation-controls label { display:grid; gap:8px; }
+.generation-controls select { padding:12px; background:#162329; color:#f2f5ee; border:1px solid #52605d; border-radius:8px; }
+.intent-review { padding:24px; margin:24px 0; }
+.intent-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:18px; }
+.intent-grid ul { padding-left:18px; }
+.intent-grid li { margin:8px 0; font-size:13px; }
+.shot-review { border-left:3px solid #b9cf83; padding:12px 16px; margin:16px 0; background:#b9cf8310; }
+.shot-review p,.intent-review p,.generation-controls small { font-size:13px; line-height:1.7; opacity:.8; }
+button:disabled { cursor:not-allowed; opacity:.5; }

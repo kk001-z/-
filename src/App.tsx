@@ -30,6 +30,9 @@ import {
   X,
 } from 'lucide-react'
 import {
+  analyze,
+  configureGeneration,
+  type GenerationMode,
   applyGlobalLocks,
   deleteAnalysisShot,
   duplicateAnalysisShot,
@@ -97,6 +100,8 @@ import {
   type RuntimeCapabilities,
 } from './lib/runtime'
 
+import { analyzeIntent, reviewShot } from './lib/directorReview'
+
 type WorkspaceMode = InputMode | 'reference'
 type EngineState = 'ai' | 'local' | null
 
@@ -148,6 +153,8 @@ function App() {
   const [assets, setAssets] = useState<ProjectAsset[]>([])
   const [assetBusy, setAssetBusy] = useState(false)
   const [shareState, setShareState] = useState('')
+  const [outputModel, setOutputModel] = useState('')
+  const [generationMode, setGenerationMode] = useState<GenerationMode>('image-to-video')
   const [runtime, setRuntime] = useState<RuntimeCapabilities | null>(null)
 
   const imageInputRef = useRef<HTMLInputElement>(null)
@@ -183,7 +190,8 @@ function App() {
     [assets, bibleReferenceAssetIds],
   )
 
-  const canRun = mode === 'reference' ? Boolean(reference) : Boolean(input.trim())
+  const aiReady = Boolean(runtime?.apiAvailable && runtime.aiConfigured)
+  const canRun = mode === 'reference' ? Boolean(reference) && aiReady : Boolean(input.trim())
 
   useEffect(() => {
     void detectRuntimeCapabilities().then(setRuntime)
@@ -435,8 +443,9 @@ function App() {
     setNotice('')
 
     try {
-      const response =
-        mode === 'reference' && reference
+      const response = !aiReady && mode !== 'reference'
+        ? { result: applyGlobalLocks(analyze(input, mode, platform), effectiveLocks, platform), engine: 'local' as const, model: '', notice: '本地规则拆镜：未调用云端 AI，请人工复核导演意图。' }
+        : mode === 'reference' && reference
           ? await analyzeReferenceWithDirector(
               reference,
               platform,
@@ -452,7 +461,7 @@ function App() {
               bibleReferenceImages,
             )
 
-      setResult(response.result)
+      setResult(configureGeneration(response.result, result?.outputModel || outputModel, result?.generationMode || generationMode))
       setResultHistory([])
       setEngine(response.engine)
       setEngineModel(response.model ?? '')
@@ -469,7 +478,7 @@ function App() {
 
   async function regenerateShot(shot: Shot, customInstruction = '') {
     if (!result || regeneratingShotId !== null) return
-    if (runtime?.staticMode) {
+    if (!aiReady) {
       setNotice('当前是公开静态演示版：单镜 AI 重生成需要完整云端后端。你仍可修改时长、复制/删除镜头、切换平台并导出。')
       return
     }
@@ -846,6 +855,7 @@ function App() {
 
   function selectPlatform(next: PlatformId) {
     setPlatform(next)
+    setOutputModel('')
 
     if (result) {
       setResult(applyGlobalLocks(recompileAnalysisResult(result, next), effectiveLocks, next))
@@ -964,6 +974,7 @@ function App() {
         onUnbind={unbindAsset}
       />
 
+      <div className="shell notice" role="status">{!runtime ? '正在检测云端 AI 状态…' : aiReady ? `云端 AI 已配置 · 导演分析模型：${runtime.model || '服务端配置'}（请求失败时文本会回退本地）` : runtime.apiAvailable ? '后端在线，云端 AI 未配置 · 文本使用本地规则；视觉反推与重生成不可用' : '静态演示 / 后端不可达 · 文本使用本地规则；视觉反推与重生成不可用'}</div>
       <section className="workspace shell">
         <div className="composer card">
           <div className="mode-tabs mode-tabs-three">
@@ -1079,10 +1090,19 @@ function App() {
             ))}
           </div>
 
+          <div className="generation-controls">
+            <label>目标视频模型（仅编译提示词）<select value={result?.outputModel || outputModel || currentPlatform.models[0]} onChange={event => { setOutputModel(event.target.value); if (result) commitResult(configureGeneration(result, event.target.value, result.generationMode)); }}>
+              {currentPlatform.models.map(model => <option key={model}>{model}</option>)}
+            </select></label>
+            <label>生成模式<select value={result?.generationMode || generationMode} onChange={event => { const next = event.target.value as GenerationMode; setGenerationMode(next); if (result) commitResult(configureGeneration(result, result.outputModel || outputModel, next)); }}>
+              <option value="text-to-video">文生视频 · 无首帧输入</option><option value="image-to-video">图生视频 · 需上传首帧</option><option value="reference-to-video">参考图生视频 · 需绑定参考资产</option>
+            </select></label>
+            <small>模型名称为现有适配标签，未实时核验供应商版本或能力。参考图模式请确认目标平台支持；本工具不直接生成视频。</small>
+          </div>
           <div className="selected-model">
             <div>
               <span>当前适配</span>
-              <strong>{currentPlatform.name} · {currentPlatform.models[0]}</strong>
+              <strong>{currentPlatform.name} · {result?.outputModel || outputModel || currentPlatform.models[0]}</strong>
             </div>
             <ChevronDown size={18} />
           </div>
@@ -1119,8 +1139,8 @@ function App() {
             {preparingReference
               ? referenceProgress || '正在处理素材…'
               : loading
-                ? mode === 'reference' ? 'AI 正在反推素材…' : 'AI 导演正在拆镜…'
-                : mode === 'reference' ? '开始反推参考素材' : 'AI 导演分析'}
+                ? mode === 'reference' ? 'AI 正在反推素材…' : aiReady ? '云端 AI 正在拆镜…' : '本地规则正在拆镜…'
+                : mode === 'reference' ? '开始反推参考素材' : aiReady ? '云端 AI 导演分析' : '本地规则拆镜'}
             {!loading && !preparingReference && <ArrowRight size={18} />}
           </button>
 
@@ -1214,8 +1234,13 @@ function App() {
             </div>
           </div>
 
+          <section className="intent-review card">
+            <h3>结构化导演意图</h3><p>从当前分镜归纳；本地结果为规则推断，请确认主体、动作和摄影意图。复杂度为启发式评审，不代表生成成功率。</p>
+            <div className="intent-grid">{analyzeIntent(result).map(item => <div key={item.label}><strong>{item.label}</strong><ul>{item.values.map(value => <li key={value}>{value}</li>)}</ul></div>)}</div>
+          </section>
           <StoryTimeline
             result={result}
+            aiReady={aiReady}
             regeneratingShotId={regeneratingShotId}
             onReorder={reorderShots}
             onRegenerate={(shot) => void regenerateShot(shot)}
@@ -1249,8 +1274,12 @@ function App() {
                     <div><span>连续性</span><p>{shot.continuity}</p></div>
                   </div>
 
+                  <div className="shot-review"><strong>镜头复杂度：{reviewShot(shot, result.generationMode).level} · {reviewShot(shot, result.generationMode).score}/100</strong>
+                    {reviewShot(shot, result.generationMode).findings.length ? reviewShot(shot, result.generationMode).findings.map(f => <p key={f.code}><b>{f.code}</b> · 依据：{f.evidence}<br />建议：{f.advice}</p>) : <p>当前规则未发现明显冲突，仍需人工复核。</p>}
+                  </div>
                   <ShotEditTools
                     shot={shot}
+                    aiReady={aiReady}
                     assets={assets}
                     busy={regeneratingShotId === shot.id}
                     canDelete={result.shots.length > 1}
@@ -1269,7 +1298,7 @@ function App() {
                     onCopy={copyText}
                   />
                   <PromptBlock
-                    title={`${currentPlatform.short} · 图生视频 Prompt`}
+                    title={`${currentPlatform.short} · ${result.generationMode === 'text-to-video' ? '文生视频' : result.generationMode === 'reference-to-video' ? '参考图生视频' : '图生视频'} Prompt`}
                     value={shot.videoPrompt}
                     copyKey={`video-${shot.id}`}
                     copied={copied}
@@ -1296,7 +1325,7 @@ function App() {
       )}
 
       <footer className="shell footer">
-        <span>FramePilot V0.9</span>
+        <span>FramePilot V1.0</span>
         <span>Visual Assets + Project Bible + Director + Timeline</span>
       </footer>
     </main>

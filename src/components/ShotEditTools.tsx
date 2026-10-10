@@ -5,6 +5,7 @@ import type { ProjectAsset } from '../lib/assetStore'
 import ShotReferencePicker from './ShotReferencePicker'
 
 interface Props {
+  aiReady: boolean
   shot: Shot
   assets: ProjectAsset[]
   busy: boolean
@@ -17,6 +18,7 @@ interface Props {
 }
 
 export default function ShotEditTools({
+  aiReady,
   shot,
   assets,
   busy,
@@ -72,10 +74,10 @@ export default function ShotEditTools({
         />
         <button
           onClick={() => onRegenerate(shot, instruction)}
-          disabled={busy}
+          disabled={busy || !aiReady}
         >
           <RefreshCw size={13} className={busy ? 'spin' : ''} />
-          {busy ? '重生成中' : '按要求重生成'}
+          {busy ? '重生成中' : aiReady ? '按要求重生成' : '云端 AI 未就绪'}
         </button>
       </div>
     </div>

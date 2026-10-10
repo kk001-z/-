@@ -2,6 +2,7 @@ import { GripVertical, RefreshCw, TimerReset } from 'lucide-react'
 import type { AnalysisResult, Shot } from '../lib/promptEngine'
 
 interface Props {
+  aiReady: boolean
   result: AnalysisResult
   regeneratingShotId: number | null
   onReorder: (fromIndex: number, toIndex: number) => void
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export default function StoryTimeline({
+  aiReady,
   result,
   regeneratingShotId,
   onReorder,
@@ -54,11 +56,11 @@ export default function StoryTimeline({
             <strong>{shot.title}</strong>
             <button
               onClick={() => onRegenerate(shot)}
-              disabled={regeneratingShotId === shot.id}
+              disabled={!aiReady || regeneratingShotId !== null}
               title="单镜重新生成"
             >
               <RefreshCw size={11} className={regeneratingShotId === shot.id ? 'spin' : ''} />
-              {regeneratingShotId === shot.id ? '生成中' : '重生成'}
+              {regeneratingShotId === shot.id ? '生成中' : aiReady ? '重生成' : '需云端 AI'}
             </button>
           </article>
         ))}

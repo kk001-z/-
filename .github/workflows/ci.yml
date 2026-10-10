@@ -21,6 +21,9 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Test director rules and generation modes
+        run: npm test
+
       - name: Build frontend
         run: npm run build
 
