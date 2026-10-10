@@ -1,5 +1,7 @@
 ## 开通云端 AI
 
+完整云端网站：[FramePilot 云端版](https://framepilot.onrender.com)。2026-10-10 已部署前端与 AI 后端；项目和素材保存在各自浏览器中。旧静态演示地址继续保留，完整 AI 功能请使用此云端地址。
+
 [一键部署完整网站到 Render](https://render.com/deploy?repo=https://github.com/kk001-z/-)。在托管平台私密环境变量中填写自己的 `OPENAI_API_KEY`，部署后使用新网站地址。详见 [部署与真实 AI 验收](DEPLOY.md)。原静态演示地址不运行后端，也不会因新服务填写密钥而自动获得 AI 功能。
 
 ## 导航与操作自检修复

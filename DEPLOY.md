@@ -2,6 +2,8 @@
 
 ## V1.1 云端 AI 开通（推荐 Render 同域部署）
 
+已部署的网站：[https://framepilot.onrender.com](https://framepilot.onrender.com)。服务采用 Render Free，首次部署版本为 `f6bd691`。通过公开仓库方式连接，后续源码更新需在 Render 中执行 Manual Deploy；不要假设 GitHub 推送会自动同步此服务。
+
 [一键部署 FramePilot 到 Render](https://render.com/deploy?repo=https://github.com/kk001-z/-)
 
 1. 在 [OpenAI API 控制台](https://platform.openai.com/api-keys) 创建自己的项目密钥，并确认 API 账号具备可用额度及模型权限。本站不会创建或赠送 API 调用额度。
@@ -13,7 +15,7 @@
 ```bash
 # 不产生 AI 调用费用；只检查后端和密钥是否存在
 npm run check:cloud -- https://你的服务.onrender.com
-# 三次真实 AI 请求，会消耗 API 额度：拆镜、图像反推、单镜重生成
+# 四次真实 AI 请求，会消耗 API 额度：拆镜、图像反推、视频关键帧反推、单镜重生成
 npm run check:cloud -- https://你的服务.onrender.com --run-ai
 ```
 

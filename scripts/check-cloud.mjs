@@ -1,4 +1,29 @@
 // No API key is accepted by this tool. It calls the deployed app only.
+import { deflateSync } from 'node:zlib'
+
+// A valid 64px RGB PNG; some vision providers reject tiny or malformed fixtures.
+function testImage() {
+  function chunk(type, data) {
+    const tag = Buffer.from(type), size = Buffer.alloc(4), crc = Buffer.alloc(4)
+    size.writeUInt32BE(data.length)
+    let value = 0xffffffff
+    for (const byte of Buffer.concat([tag, data])) {
+      value ^= byte
+      for (let bit = 0; bit < 8; bit++) value = (value >>> 1) ^ ((value & 1) ? 0xedb88320 : 0)
+    }
+    crc.writeUInt32BE((value ^ 0xffffffff) >>> 0)
+    return Buffer.concat([size, tag, data, crc])
+  }
+  const header = Buffer.alloc(13)
+  header.writeUInt32BE(64, 0); header.writeUInt32BE(64, 4); header[8] = 8; header[9] = 2
+  const rows = Buffer.alloc(64 * 193)
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+    const offset = y * 193 + 1 + x * 3
+    rows[offset] = 240; rows[offset + 1] = 40; rows[offset + 2] = 40
+  }
+  const png = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), chunk('IHDR', header), chunk('IDAT', deflateSync(rows)), chunk('IEND', Buffer.alloc(0))])
+  return `data:image/png;base64,${png.toString('base64')}`
+}
 const [address, ...flags] = process.argv.slice(2)
 if (!address || flags.some(flag => flag !== '--run-ai')) {
   console.error('用法：npm run check:cloud -- https://你的服务.onrender.com [--run-ai]')
@@ -36,15 +61,18 @@ try {
     process.exitCode = 2
   } else if (!runAI) {
     console.log('服务端已检测到密钥；尚未验证有效性、额度或模型权限。')
-    console.log('添加 --run-ai 将执行三次真实 AI 请求，产生 API 费用。')
+    console.log('添加 --run-ai 将执行四次真实 AI 请求，产生 API 费用。')
   } else {
     const director = await request('/api/director', {input:'一个红色杯子静置在木桌上，一个镜头。',mode:'idea',platform:'kling'})
     if (director.engine !== 'ai' || !director.result?.shots?.length) throw new Error('AI 拆镜未返回有效镜头。')
     console.log('真实 AI 拆镜通过。')
-    const image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZ1sAAAAASUVORK5CYII='
-    const reverse = await request('/api/reverse', {kind:'image',images:[image],platform:'kling',context:'这是测试用的单像素图片；只描述可见事实，不虚构人物或场景。'})
+    const image = testImage()
+    const reverse = await request('/api/reverse', {kind:'image',images:[image],platform:'kling',context:'这是测试用的纯色色块；只描述可见事实，不虚构人物或场景。'})
     if (reverse.engine !== 'ai' || !reverse.result?.shots?.length) throw new Error('视觉反推未返回有效镜头。')
-    console.log('真实视觉反推接口通过（单像素连通性测试，不代表反推质量）。')
+    console.log('真实图片反推接口通过（色块连通性测试，不代表反推质量）。')
+    const video = await request('/api/reverse', {kind:'video',images:[image,image],timestamps:[0,1],duration:2,platform:'kling',context:'这是两张相同色块的测试关键帧，不虚构运动或声音。'})
+    if (video.engine !== 'ai' || !video.result?.shots?.length || video.source?.frameCount !== 2) throw new Error('视频关键帧反推未返回有效结果。')
+    console.log('真实视频关键帧反推接口通过。')
     const regenerated = await request('/api/shot/regenerate', {shot:director.result.shots[0],platform:'kling',instruction:'保持杯子静止，改为固定近景。'})
     if (regenerated.engine !== 'ai' || !regenerated.shot) throw new Error('单镜重生成未返回有效镜头。')
     console.log('真实单镜重生成通过。')
