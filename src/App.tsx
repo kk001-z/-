@@ -996,8 +996,9 @@ function App() {
   }
 
   return (
-    <main>
+    <main className="cinema-studio">
       {notice && <div className="action-feedback" role="alert"><p>{notice}</p><button aria-label="关闭操作提示" onClick={() => setNotice('')}><X size={16} /></button></div>}
+      <aside className="studio-rail" aria-label="创作快捷导航"><a className="rail-logo" href="#brief" aria-label="回到创作简报" onClick={event => { event.preventDefault(); goToSection('brief') }}><Clapperboard size={25} /></a><button className="rail-new" aria-label="新建创作项目" onClick={createNewProject}><WandSparkles size={21} /></button>{workspaceSections.map(section => <a key={section.id} href={`#${section.id}`} aria-label={`前往${section.label}`} title={section.label} aria-current={activeSection === section.id ? 'location' : undefined} onClick={event => { event.preventDefault(); goToSection(section.id) }}>{section.id === 'assets' ? <Images size={20} /> : section.id === 'result' ? <Film size={20} /> : section.id === 'execution' ? <Play size={20} /> : section.id === 'versions' ? <Layers3 size={20} /> : section.id === 'brief' ? <FileText size={20} /> : <ScanSearch size={20} />}</a>)}<span className="rail-caption">FP<br />STUDIO</span></aside>
       <header className="topbar">
         <div className="brand">
           <div className="brand-mark"><Clapperboard size={18} /></div>
@@ -1039,11 +1040,13 @@ function App() {
 
       <section className="hero shell">
         <div className="eyebrow"><Clapperboard size={16} /> 跨模型视频导演工作台</div>
-        <h1>把创意，变成<br /><span>可以执行的镜头。</span></h1>
+        <h1>你的下一部作品，<br /><span>从这里开镜。</span></h1>
         <p className="hero-copy">确认导演意图，编辑动作与起止状态，按素材和模型入口选择路线。每一镜都有执行条件、提示词与复盘记录。</p>
+        <button className="hero-create" onClick={() => goToSection('composer')}><WandSparkles size={19} /> 开始创作 <ArrowRight size={18} /></button>
+        <div className="hero-frame" aria-hidden="true"><span>FRAME / 001</span><Clapperboard size={56} /><small>DIRECT YOUR VISION</small></div>
       </section>
 
-      <nav className="workflow-nav shell" aria-label="工作台步骤">{workspaceSections.map(section => <a key={section.id} href={`#${section.id}`} aria-current={activeSection === section.id ? 'location' : undefined} onClick={event => { event.preventDefault(); goToSection(section.id) }}>{section.label}</a>)}</nav>
+      <nav className="workflow-nav shell" aria-label="工作台步骤">{workspaceSections.map(section => <a key={section.id} href={`#${section.id}`} aria-current={activeSection === section.id ? 'location' : undefined} onClick={event => { event.preventDefault(); goToSection(section.id) }}><span className="workflow-icon" aria-hidden="true">{section.id === 'brief' ? <FileText size={20} /> : section.id === 'composer' ? <WandSparkles size={20} /> : section.id === 'assets' ? <Images size={20} /> : section.id === 'result' ? <Clapperboard size={20} /> : section.id === 'execution' ? <Play size={20} /> : <Layers3 size={20} />}</span>{section.label}</a>)}</nav>
       <StudioBrief value={brief} onChange={changeBrief} />
       <div className="shell notice" role="status">{!runtime ? '正在检测云端 AI 状态…' : aiReady ? `云端 AI 已配置 · 导演分析模型：${runtime.model || '服务端配置'}（请求失败时文本会回退本地）` : runtime.apiAvailable ? '后端在线，云端 AI 未配置 · 文本使用本地规则；视觉反推与重生成不可用' : '静态演示 / 后端不可达 · 文本使用本地规则；视觉反推与重生成不可用'}</div>
       <section className="workspace shell" id="composer">
