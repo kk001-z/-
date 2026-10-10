@@ -12,7 +12,8 @@
     "preview": "vite preview",
     "start": "tsx server.ts",
     "vercel-build": "npm run build",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "check:cloud": "node scripts/check-cloud.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^4.3.4",
