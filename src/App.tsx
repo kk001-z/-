@@ -92,6 +92,10 @@ import {
   readShareSnapshot,
   shareUrl,
 } from './lib/share'
+import {
+  detectRuntimeCapabilities,
+  type RuntimeCapabilities,
+} from './lib/runtime'
 
 type WorkspaceMode = InputMode | 'reference'
 type EngineState = 'ai' | 'local' | null
@@ -144,6 +148,7 @@ function App() {
   const [assets, setAssets] = useState<ProjectAsset[]>([])
   const [assetBusy, setAssetBusy] = useState(false)
   const [shareState, setShareState] = useState('')
+  const [runtime, setRuntime] = useState<RuntimeCapabilities | null>(null)
 
   const imageInputRef = useRef<HTMLInputElement>(null)
   const videoInputRef = useRef<HTMLInputElement>(null)
@@ -181,6 +186,8 @@ function App() {
   const canRun = mode === 'reference' ? Boolean(reference) : Boolean(input.trim())
 
   useEffect(() => {
+    void detectRuntimeCapabilities().then(setRuntime)
+
     try {
       const shared = readShareSnapshot()
       if (shared) {
@@ -462,6 +469,10 @@ function App() {
 
   async function regenerateShot(shot: Shot, customInstruction = '') {
     if (!result || regeneratingShotId !== null) return
+    if (runtime?.staticMode) {
+      setNotice('当前是公开静态演示版：单镜 AI 重生成需要完整云端后端。你仍可修改时长、复制/删除镜头、切换平台并导出。')
+      return
+    }
 
     setRegeneratingShotId(shot.id)
     setNotice('')
@@ -844,6 +855,9 @@ function App() {
 
   async function handleReferenceFile(file?: File) {
     if (!file) return
+    if (runtime?.staticMode && file.type.startsWith('video/')) {
+      setNotice('公开静态版可以本地读取视频，但视觉反推需要云端 AI 后端；建议先体验剧本/画面拆镜功能。')
+    }
 
     setPreparingReference(true)
     setReferenceProgress(file.type.startsWith('video/') ? '正在读取视频…' : '正在优化图片…')
@@ -897,6 +911,16 @@ function App() {
           </button>
         </div>
       </header>
+
+      {runtime?.staticMode && (
+        <div className="public-demo-banner shell">
+          <div>
+            <strong>公开演示版</strong>
+            <span>无需登录，可直接体验剧本/画面拆镜、Bible、时间轴、多平台 Prompt、导出和方案分享。</span>
+          </div>
+          <small>视觉反推与单镜 AI 重生成将在完整云端版启用</small>
+        </div>
+      )}
 
       <ProjectBar
         projects={projects}
@@ -1102,7 +1126,9 @@ function App() {
 
           <div className="engine-hint">
             <span className="engine-dot" />
-            文本模式支持本地回退；图片 / 视频反推、单镜重生成需要视觉 / 文本 AI。项目与资产库保存在当前浏览器。
+            {runtime?.staticMode
+              ? '当前为公开静态版：画面/剧本会使用本地 Director；项目、Bible、时间轴、导出和分享均可正常使用。'
+              : '文本模式支持本地回退；图片 / 视频反推、单镜重生成需要视觉 / 文本 AI。项目与资产库保存在当前浏览器。'}
           </div>
 
           {notice && !result && <div className="notice composer-notice">{notice}</div>}
