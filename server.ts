@@ -6,6 +6,7 @@ import app from './server/app'
 const port = Number(process.env.PORT ?? 3000)
 const distDir = path.resolve(process.cwd(), 'dist')
 
+app.get('/favicon.ico', (_request, response) => { response.status(204).end() })
 app.use(express.static(distDir))
 
 app.use((_request, response) => {

@@ -20,6 +20,9 @@ export function storyboardToMarkdown(result: AnalysisResult, platformName: strin
       '',
       `**原始意图**：${shot.source}`,
       '',
+      `**镜头目的**：${shot.purpose || '待确认'}`,
+      `**起始状态**：${shot.startState || '待确认'}`,
+      `**结束状态**：${shot.endState || '待确认'}`,
       `**时长**：${shot.duration}s`,
       '',
       `**景别 / 机位**：${shot.framing}`,
@@ -126,7 +129,7 @@ export function storyboardToCsv(result: AnalysisResult) {
     'ReferenceAssets',
     'FirstFramePrompt',
     'VideoPrompt',
-    'NegativePrompt',
+    'NegativePrompt', 'Purpose', 'StartState', 'EndState', 'ReferenceRoles', 'Music', 'Observation', 'Inference', 'Unknown', 'Feedback',
   ]
 
   const rows = result.shots.map((shot) => [
@@ -146,7 +149,7 @@ export function storyboardToCsv(result: AnalysisResult) {
     (shot.referenceAssetIds ?? []).join('|'),
     shot.firstFramePrompt,
     shot.videoPrompt,
-    shot.negativePrompt,
+    shot.negativePrompt, shot.purpose, shot.startState, shot.endState, JSON.stringify(shot.referenceRoles || {}), shot.music, shot.observation, shot.inference, shot.unknown, shot.feedback,
   ])
 
   return [

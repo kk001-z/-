@@ -32,6 +32,12 @@ const directorSchema = {
         type: 'object',
         additionalProperties: false,
         properties: {
+          purpose: { type: 'string' },
+          startState: { type: 'string' },
+          endState: { type: 'string' },
+          observation: { type: 'string' },
+          inference: { type: 'string' },
+          unknown: { type: 'string' },
           title: { type: 'string' },
           source: { type: 'string' },
           duration: { type: 'integer', minimum: 1, maximum: 12 },
@@ -47,6 +53,7 @@ const directorSchema = {
           sound: { type: 'string' },
         },
         required: [
+          'purpose', 'startState', 'endState', 'observation', 'inference', 'unknown',
           'title',
           'source',
           'duration',
@@ -91,6 +98,12 @@ function normalizeShot(raw: Record<string, unknown>, index: number): DirectorSho
     id: index + 1,
     title: asText(raw.title, source.slice(0, 18)),
     source,
+    purpose: asText(raw.purpose),
+    startState: asText(raw.startState),
+    endState: asText(raw.endState),
+    observation: asText(raw.observation),
+    inference: asText(raw.inference),
+    unknown: asText(raw.unknown),
     duration: asDuration(raw.duration),
     framing: asText(raw.framing, '中景'),
     camera: asText(raw.camera, '稳定机位 + 轻微推进'),
@@ -263,7 +276,7 @@ app.get('/api/health', (_request, response) => {
 })
 
 app.post('/api/director', async (request, response) => {
-  const { input, mode, platform, locks = '', referenceImages = [] } = request.body ?? {}
+  const { input, mode, platform, locks = '', referenceImages = [], creativeContext = '' } = request.body ?? {}
 
   if (typeof input !== 'string' || !input.trim()) {
     response.status(400).json({ error: 'input is required' })
@@ -301,7 +314,7 @@ app.post('/api/director', async (request, response) => {
             content: [
               {
                 type: 'input_text' as const,
-                text: `${input.trim()}\n\n以下图片来自项目 Character / Product Bible，是需要保持一致的视觉锚点。请用它们确认人物身份、产品结构、颜色、Logo、材质和比例，不要擅自重新设计。`,
+                text: `${input.trim()}\n${asText(creativeContext)}\n\n以下图片来自项目 Character / Product Bible，是需要保持一致的视觉锚点。请用它们确认人物身份、产品结构、颜色、Logo、材质和比例，不要擅自重新设计。`,
               },
               ...directorReferenceImages.map((imageUrl: string) => ({
                 type: 'input_image' as const,
@@ -311,7 +324,7 @@ app.post('/api/director', async (request, response) => {
             ],
           },
         ]
-      : input.trim()
+      : `${input.trim()}\n${asText(creativeContext)}`
 
     const result = await client.responses.create({
       model: process.env.OPENAI_MODEL ?? 'gpt-6-luna',
@@ -350,6 +363,7 @@ app.post('/api/reverse', async (request, response) => {
     height,
     name = '',
     lockedReferenceImages = [],
+    timestamps = [],
   } = request.body ?? {}
 
   if (kind !== 'image' && kind !== 'video') {
@@ -381,7 +395,7 @@ app.post('/api/reverse', async (request, response) => {
       name ? `文件名：${name}` : '',
       Number.isFinite(width) && Number.isFinite(height) ? `原始尺寸：${width}×${height}` : '',
       kind === 'video' && Number.isFinite(duration) ? `原视频时长：${Number(duration).toFixed(1)} 秒` : '',
-      kind === 'video' ? `关键帧数量：${images.length}，按时间顺序排列` : '',
+      kind === 'video' ? `关键帧数量：${images.length}，按时间顺序排列；时间戳：${Array.isArray(timestamps) ? timestamps.map((t: unknown) => Number.isFinite(t) ? `${Number(t).toFixed(1)}s` : '未知').join('、') : '未知'}。未提供音轨，不能确认声音或精确完整运镜。` : '',
     ].filter(Boolean).join('；')
 
     const visualContent = images.map((imageUrl: string) => ({
@@ -409,7 +423,7 @@ app.post('/api/reverse', async (request, response) => {
           content: [
             {
               type: 'input_text' as const,
-              text: `请按提供顺序分析这些视觉素材。素材信息：${metadata || '无额外元数据'}。`,
+              text: `请按提供顺序分析这些视觉素材。每镜填写 purpose（镜头目的）、startState（确定的静态起始状态）、endState（结束画面）。observation 仅填可见事实，inference 填推断或为生成而作的改编，unknown 填无法确认内容；禁止把估计焦距、听不到的声音或未见的动作当事实。素材信息：${metadata || '无额外元数据'}。`,
             },
             ...visualContent,
             ...(bibleVisualContent.length

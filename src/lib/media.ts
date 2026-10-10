@@ -9,6 +9,7 @@ export interface PreparedReference {
   width?: number
   height?: number
   frames: string[]
+  timestamps?: number[]
 }
 
 const MAX_IMAGE_EDGE = 1600
@@ -178,6 +179,7 @@ export async function prepareVideoReference(
       width: video.videoWidth,
       height: video.videoHeight,
       frames,
+      timestamps: times,
     }
   } finally {
     URL.revokeObjectURL(url)

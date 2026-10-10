@@ -1,3 +1,4 @@
+import { normalizeBrief, type CreativeBrief } from './studio'
 import type { AnalysisResult } from './promptEngine'
 import type { PlatformId } from './modelCatalog'
 
@@ -34,6 +35,7 @@ export interface FramePilotProject {
   locks: string
   characters: CharacterBible[]
   products: ProductBible[]
+  brief?: CreativeBrief
   result: AnalysisResult | null
 }
 
@@ -105,6 +107,7 @@ export function normalizeProject(project: Partial<FramePilotProject>): FramePilo
     platform: project.platform || 'xiaoyunque',
     input: project.input || '',
     locks: project.locks || '',
+    brief: normalizeBrief(project.brief || project.result?.brief),
     characters: Array.isArray(project.characters)
       ? project.characters.map((item) => normalizeCharacter(item))
       : [],

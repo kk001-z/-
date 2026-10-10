@@ -1,3 +1,4 @@
+import type { CreativeBrief } from './studio'
 import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string'
 import type { AnalysisResult } from './promptEngine'
 import type { PlatformId } from './modelCatalog'
@@ -12,6 +13,7 @@ export interface ShareSnapshot {
   locks: string
   characters: CharacterBible[]
   products: ProductBible[]
+  brief?: CreativeBrief
   result: AnalysisResult | null
 }
 
@@ -29,9 +31,11 @@ function stripAssetBindings(snapshot: ShareSnapshot): ShareSnapshot {
     result: snapshot.result
       ? {
           ...snapshot.result,
+          versions: [],
           shots: snapshot.result.shots.map((shot) => ({
             ...shot,
             referenceAssetIds: [],
+            referenceRoles: {},
           })),
         }
       : null,

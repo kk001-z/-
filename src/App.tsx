@@ -8,7 +8,6 @@ import {
 import {
   ArrowRight,
   Check,
-  ChevronDown,
   Clapperboard,
   ClipboardCopy,
   Copy,
@@ -100,7 +99,11 @@ import {
   type RuntimeCapabilities,
 } from './lib/runtime'
 
-import { analyzeIntent, reviewShot } from './lib/directorReview'
+import StudioVersions from './components/StudioVersions'
+import StudioBrief from './components/StudioBrief'
+import StudioExecution from './components/StudioExecution'
+import StudioShotEditor from './components/StudioShotEditor'
+import { briefContext, remapResultAssets, compileStudio, defaultBrief, defaultExecution, generationLabels, initializeStudio, normalizeBrief, type CreativeBrief, type ExecutionSettings } from './lib/studio'
 
 type WorkspaceMode = InputMode | 'reference'
 type EngineState = 'ai' | 'local' | null
@@ -116,6 +119,11 @@ interface PersistedWorkspace {
   projectName?: string
   characters?: CharacterBible[]
   products?: ProductBible[]
+  brief?: CreativeBrief
+  execution?: ExecutionSettings
+  outputModel?: string
+  generationMode?: GenerationMode
+  activeProjectId?: string
 }
 
 const STORAGE_KEY = 'framepilot.workspace.v0.4'
@@ -153,6 +161,8 @@ function App() {
   const [assets, setAssets] = useState<ProjectAsset[]>([])
   const [assetBusy, setAssetBusy] = useState(false)
   const [shareState, setShareState] = useState('')
+  const [brief, setBrief] = useState<CreativeBrief>({ ...defaultBrief })
+  const [execution, setExecution] = useState<ExecutionSettings>({ ...defaultExecution })
   const [outputModel, setOutputModel] = useState('')
   const [generationMode, setGenerationMode] = useState<GenerationMode>('image-to-video')
   const [runtime, setRuntime] = useState<RuntimeCapabilities | null>(null)
@@ -171,7 +181,7 @@ function App() {
   )
 
   const effectiveLocks = useMemo(
-    () => [locks.trim(), bibleLocks.trim()].filter(Boolean).join('；'),
+    () => locks.trim(),
     [locks, bibleLocks],
   )
 
@@ -203,11 +213,14 @@ function App() {
           name: shared.projectName,
           platform: shared.platform,
           input: shared.input,
+          brief: shared.brief || shared.result?.brief,
           locks: shared.locks,
           characters: shared.characters,
           products: shared.products,
           result: shared.result,
         })
+        setBrief(normalizeBrief(normalizedShared.brief))
+        setExecution({ ...defaultExecution, ...shared.result?.execution })
         setProjectName(`${normalizedShared.name} · 分享快照`)
         setPlatform(normalizedShared.platform)
         setInput(normalizedShared.input || ideaExample)
@@ -222,14 +235,20 @@ function App() {
         return
       }
 
+      let workspaceProjectId = ''
       const raw = localStorage.getItem(STORAGE_KEY)
       if (raw) {
         const saved = JSON.parse(raw) as Partial<PersistedWorkspace>
+        workspaceProjectId = saved.activeProjectId || ''
+        setOutputModel(saved.outputModel || saved.result?.outputModel || '')
+        setGenerationMode(saved.generationMode || saved.result?.generationMode || 'image-to-video')
         const validMode = saved.mode === 'idea' || saved.mode === 'script' || saved.mode === 'reference'
         const validPlatform = platforms.some((item) => item.id === saved.platform)
 
         if (validMode && saved.mode) setMode(saved.mode)
         if (validPlatform && saved.platform) setPlatform(saved.platform)
+        setBrief(normalizeBrief(saved.brief || saved.result?.brief))
+        setExecution({ ...defaultExecution, ...saved.execution, ...saved.result?.execution })
         if (typeof saved.input === 'string') setInput(saved.input)
         if (saved.result && typeof saved.result === 'object') setResult(saved.result as AnalysisResult)
         if (saved.engine === 'ai' || saved.engine === 'local') setEngine(saved.engine)
@@ -252,7 +271,10 @@ function App() {
       const storedActiveId = loadActiveProjectId()
       const activeProject = storedProjects.find((item) => item.id === storedActiveId)
       if (activeProject) {
-        applyProject(activeProject)
+        if (workspaceProjectId === activeProject.id) {
+          setActiveProjectId(activeProject.id)
+          void refreshProjectAssets(activeProject.id)
+        } else applyProject(activeProject)
       }
     } catch {
       localStorage.removeItem(STORAGE_KEY)
@@ -273,6 +295,11 @@ function App() {
       engineModel,
       locks,
       projectName,
+      brief,
+      execution,
+      outputModel,
+      generationMode,
+      activeProjectId,
       characters,
       products,
     }
@@ -284,6 +311,11 @@ function App() {
     }
   }, [
     hydrated,
+    brief,
+    execution,
+    outputModel,
+    generationMode,
+    activeProjectId,
     mode,
     platform,
     input,
@@ -310,11 +342,17 @@ function App() {
     saveActiveProjectId(project.id)
     setProjectName(project.name)
     setPlatform(project.platform)
+    setBrief(normalizeBrief(project.brief || project.result?.brief))
+    setExecution({ ...defaultExecution, ...project.result?.execution })
+    setOutputModel(project.result?.outputModel || '')
+    setGenerationMode(project.result?.generationMode || 'image-to-video')
     setInput(project.input || ideaExample)
     setLocks(project.locks || '')
     setCharacters(project.characters || [])
     setProducts(project.products || [])
     setResult(project.result || null)
+    setEngine(null)
+    setEngineModel('')
     setResultHistory([])
     setReference(null)
     void refreshProjectAssets(project.id)
@@ -329,6 +367,7 @@ function App() {
       ...createProject(projectName.trim() || '未命名项目'),
       platform,
       input,
+      brief,
       locks,
       characters,
       products,
@@ -353,6 +392,7 @@ function App() {
       updatedAt: now,
       platform,
       input,
+      brief,
       locks,
       characters,
       products,
@@ -381,6 +421,10 @@ function App() {
     setMode('idea')
     setPlatform(defaultPlatform)
     setInput(ideaExample)
+    setBrief({ ...defaultBrief })
+    setExecution({ ...defaultExecution })
+    setOutputModel('')
+    setGenerationMode('image-to-video')
     setLocks('')
     setCharacters([])
     setProducts([])
@@ -449,7 +493,7 @@ function App() {
           ? await analyzeReferenceWithDirector(
               reference,
               platform,
-              input.trim(),
+              `${input.trim()}\n${briefContext(brief)}`,
               effectiveLocks,
               bibleReferenceImages,
             )
@@ -459,13 +503,23 @@ function App() {
               platform,
               effectiveLocks,
               bibleReferenceImages,
+              `${briefContext(brief)}\n可选资产资料（只在出场镜头采用）：${bibleLocks}`,
             )
 
-      setResult(configureGeneration(response.result, result?.outputModel || outputModel, result?.generationMode || generationMode))
+      const plan = initializeStudio(response.result, brief, result?.execution || execution)
+      if (response.engine === 'local') {
+        plan.shots = plan.shots.map((shot, index) => ({ ...shot,
+          subject: brief.subject || shot.subject,
+          environment: brief.environment || shot.environment,
+          action: brief.action && plan.shots.length === 1 ? brief.action : shot.action,
+          endState: index === plan.shots.length - 1 ? brief.ending : '',
+        }))
+      }
+      setResult(compileStudio(configureGeneration(plan, result?.outputModel || outputModel, result?.generationMode || generationMode), characters, products))
       setResultHistory([])
       setEngine(response.engine)
       setEngineModel(response.model ?? '')
-      setNotice(response.notice ?? '')
+      setNotice([response.notice, !brief.confirmed ? '导演意图尚未确认，可在创作简报中补充后继续编辑。' : ''].filter(Boolean).join(' '))
       setTimeout(() => document.getElementById('result')?.scrollIntoView({ behavior: 'smooth' }), 80)
     } catch (error) {
       setResult(null)
@@ -494,8 +548,8 @@ function App() {
       const response = await regenerateShotWithDirector(
         shot,
         platform,
-        effectiveLocks,
-        input.trim(),
+        [effectiveLocks, shot.scopedLocks].filter(Boolean).join('；'),
+        `${input.trim()}\n${briefContext(brief)}`,
         customInstruction.trim() || '保持当前镜头的剧情功能，优化镜头设计、动作可执行性和生成稳定性。',
         shotReferenceImages,
       )
@@ -544,6 +598,26 @@ function App() {
     )
   }
 
+  function editStudioShot(shotId: number, patch: Partial<Shot>) {
+    if (!result) return
+    const next = { ...result, shots: result.shots.map(shot => shot.id === shotId ? { ...shot, ...patch } : shot) }
+    commitResult(compileStudio(next, characters, products))
+  }
+
+  function changeBrief(next: CreativeBrief) {
+    setBrief(next)
+    if (result) commitResult(compileStudio({ ...result, brief: next }, characters, products), '简报已更新，已有镜头内容保留。请复核分镜，或重新分析采用新的意图。')
+  }
+
+  function changeExecution(next: AnalysisResult) {
+    setGenerationMode(next.generationMode || 'image-to-video')
+    setExecution({ ...defaultExecution, ...next.execution })
+    if (next.brief) setBrief(next.brief)
+    setPlatform(next.recommendedPlatform)
+    setOutputModel(next.outputModel || '')
+    commitResult(compileStudio(next, characters, products))
+  }
+
   function changeShotAssets(shotId: number, ids: string[]) {
     if (!result) return
     commitResult(
@@ -580,13 +654,14 @@ function App() {
         referenceAssetIds: (item.referenceAssetIds ?? []).filter((id) => id !== assetId),
       })))
       if (result) {
-        setResult({
+        setResult(compileStudio({
           ...result,
           shots: result.shots.map((shot) => ({
             ...shot,
             referenceAssetIds: (shot.referenceAssetIds ?? []).filter((id) => id !== assetId),
+            referenceRoles: Object.fromEntries(Object.entries(shot.referenceRoles || {}).filter(([id]) => id !== assetId)),
           })),
-        })
+        }, characters, products))
       }
       setNotice('参考图已从项目中删除，并解除所有 Bible / Shot 绑定。')
     } catch (error) {
@@ -639,6 +714,7 @@ function App() {
       projectName,
       platform,
       input,
+      brief,
       locks,
       characters,
       products,
@@ -783,17 +859,7 @@ function App() {
           .map((id) => assetIdMap.get(id) || id)
           .filter((id) => restoredAssets.some((asset) => asset.id === id)),
       }))
-      if (imported.result) {
-        imported.result = {
-          ...imported.result,
-          shots: imported.result.shots.map((shot) => ({
-            ...shot,
-            referenceAssetIds: (shot.referenceAssetIds ?? [])
-              .map((id) => assetIdMap.get(id) || id)
-              .filter((id) => restoredAssets.some((asset) => asset.id === id)),
-          })),
-        }
-      }
+      if (imported.result) imported.result = remapResultAssets(imported.result, assetIdMap)
 
       const nextProjects = [imported, ...projects]
       setProjects(nextProjects)
@@ -820,37 +886,16 @@ function App() {
 
   function updateLocks(value: string) {
     setLocks(value)
-    if (result) {
-      setResult(null)
-      setResultHistory([])
-      setEngine(null)
-      setNotice('一致性锁已修改，请重新分析以确保所有镜头使用最新锁定规则。')
-    }
+    if (result) setNotice('全局约束已修改；重新分析后采用。已有镜头仍可编辑，不会丢失。')
   }
-
-  function addLockPreset(value: string) {
-    const next = locks.trim() ? `${locks.trim()}；${value}` : value
-    updateLocks(next)
-  }
-
+  function addLockPreset(value: string) { updateLocks(locks.trim() ? `${locks.trim()}；${value}` : value) }
   function updateCharacters(next: CharacterBible[]) {
     setCharacters(next)
-    if (result) {
-      setResult(null)
-      setResultHistory([])
-      setEngine(null)
-      setNotice('Character Bible 已修改，请重新分析以应用到全部镜头。')
-    }
+    if (result) commitResult(compileStudio(result, next, products))
   }
-
   function updateProducts(next: ProductBible[]) {
     setProducts(next)
-    if (result) {
-      setResult(null)
-      setResultHistory([])
-      setEngine(null)
-      setNotice('Product Bible 已修改，请重新分析以应用到全部镜头。')
-    }
+    if (result) commitResult(compileStudio(result, characters, next))
   }
 
   function selectPlatform(next: PlatformId) {
@@ -858,7 +903,7 @@ function App() {
     setOutputModel('')
 
     if (result) {
-      setResult(applyGlobalLocks(recompileAnalysisResult(result, next), effectiveLocks, next))
+      setResult(compileStudio(recompileAnalysisResult(result, next), characters, products))
       setNotice('已在本地切换并重新编译目标平台 Prompt，无需再次调用 AI。')
     }
   }
@@ -915,7 +960,7 @@ function App() {
           <span className="beta">CN · VIDEO AI</span>
         </div>
         <div className="topbar-actions">
-          <div className="nav-note">AI 导演 · Bible · Reverse Prompt · Timeline</div>
+          <div className="nav-note">创作简报 · 导演分镜 · 生成执行</div>
           <button className="share-site-button" onClick={() => void shareWebsite()}>
             <Share2 size={14} /> 分享网站
           </button>
@@ -948,34 +993,15 @@ function App() {
       />
 
       <section className="hero shell">
-        <div className="eyebrow"><Sparkles size={14} /> 从想法到可执行 AI 视频项目</div>
-        <h1>你负责想象，<br /><span>剩下的交给 AI 导演。</span></h1>
-        <p className="hero-copy">
-          描述画面、粘贴剧本，或者上传参考图与参考视频。建立 Character / Product Bible，
-          系统自动拆镜、锁定一致性、生成时间轴，再编译成主流 AI 视频平台可用的 Prompt。
-        </p>
+        <div className="eyebrow"><Clapperboard size={16} /> 跨模型视频导演工作台</div>
+        <h1>把创意，变成<br /><span>可以执行的镜头。</span></h1>
+        <p className="hero-copy">确认导演意图，编辑动作与起止状态，按素材和模型入口选择路线。每一镜都有执行条件、提示词与复盘记录。</p>
       </section>
 
-      <BiblePanel
-        characters={characters}
-        products={products}
-        onCharactersChange={updateCharacters}
-        onProductsChange={updateProducts}
-      />
-
-      <AssetLibrary
-        assets={assets}
-        characters={characters}
-        products={products}
-        busy={assetBusy}
-        onUpload={(file) => void uploadAsset(file)}
-        onDelete={(assetId) => void removeAsset(assetId)}
-        onBind={bindAsset}
-        onUnbind={unbindAsset}
-      />
-
+      <nav className="workflow-nav shell" aria-label="工作台步骤"><a href="#brief">创作简报</a><a href="#composer">内容输入</a><a href="#result">导演分镜</a><a href="#execution">生成执行</a></nav>
+      <StudioBrief value={brief} onChange={changeBrief} />
       <div className="shell notice" role="status">{!runtime ? '正在检测云端 AI 状态…' : aiReady ? `云端 AI 已配置 · 导演分析模型：${runtime.model || '服务端配置'}（请求失败时文本会回退本地）` : runtime.apiAvailable ? '后端在线，云端 AI 未配置 · 文本使用本地规则；视觉反推与重生成不可用' : '静态演示 / 后端不可达 · 文本使用本地规则；视觉反推与重生成不可用'}</div>
-      <section className="workspace shell">
+      <section className="workspace shell" id="composer">
         <div className="composer card">
           <div className="mode-tabs mode-tabs-three">
             <button className={mode === 'idea' ? 'active' : ''} onClick={() => changeMode('idea')}>
@@ -1074,7 +1100,7 @@ function App() {
 
           <div className="field-head platform-title">
             <label>输出到哪个平台？</label>
-            <span>{result ? '切换后立即重新编译，不重新调用 AI' : '平台决定最终 Prompt 写法'}</span>
+            <span>{result ? '切换后立即重新编译，不重新调用 AI' : '按模型与入口核对执行条件'}</span>
           </div>
 
           <div className="platform-grid">
@@ -1095,25 +1121,25 @@ function App() {
               {currentPlatform.models.map(model => <option key={model}>{model}</option>)}
             </select></label>
             <label>生成模式<select value={result?.generationMode || generationMode} onChange={event => { const next = event.target.value as GenerationMode; setGenerationMode(next); if (result) commitResult(configureGeneration(result, result.outputModel || outputModel, next)); }}>
-              <option value="text-to-video">文生视频 · 无首帧输入</option><option value="image-to-video">图生视频 · 需上传首帧</option><option value="reference-to-video">参考图生视频 · 需绑定参考资产</option>
+              {Object.entries(generationLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
             </select></label>
-            <small>模型名称为现有适配标签，未实时核验供应商版本或能力。参考图模式请确认目标平台支持；本工具不直接生成视频。</small>
+            <small>部分模型有官方资料依据；专用版本及入口参数未确认时使用通用编译。详细条件在生成执行板块核对；本工具不直接生成视频。</small>
           </div>
           <div className="selected-model">
             <div>
-              <span>当前适配</span>
+              <span>当前适配 · 专用规则未确认时使用通用编译</span>
               <strong>{currentPlatform.name} · {result?.outputModel || outputModel || currentPlatform.models[0]}</strong>
             </div>
-            <ChevronDown size={18} />
+            <span>提示词适配</span>
           </div>
 
           <div className="consistency-lock">
             <div className="consistency-lock-head">
               <div>
                 <span><LockKeyhole size={14} /> 一致性资产锁</span>
-                <strong>补充跨镜头绝对不能变的内容</strong>
+                <strong>项目通用约束 · 每镜资产另行选择</strong>
               </div>
-              <small>Bible 会自动叠加</small>
+              <small>按镜头引用资产</small>
             </div>
             <textarea
               value={locks}
@@ -1128,7 +1154,7 @@ function App() {
             </div>
             {bibleLocks && (
               <div className="bible-lock-preview">
-                <span>自动注入的 Bible Lock</span>
+                <span>可用的资产资料 · 在每镜勾选出场资产后注入</span>
                 <p>{bibleLocks}</p>
               </div>
             )}
@@ -1157,7 +1183,7 @@ function App() {
         <aside className="side card">
           <div className="side-title">
             {mode === 'reference' ? <ScanSearch size={18} /> : <Layers3 size={18} />}
-            {mode === 'reference' ? '反推模式会做什么？' : 'AI 导演会替你做什么？'}
+            {mode === 'reference' ? '反推模式会做什么？' : '从内容到可执行分镜'}
           </div>
 
           {mode === 'reference' ? (
@@ -1165,14 +1191,14 @@ function App() {
               <div className="step"><span>01</span><div><strong>读取视觉素材</strong><p>识别人物、产品、场景、构图、材质与明显文字。</p></div></div>
               <div className="step"><span>02</span><div><strong>视频关键帧分析</strong><p>按时间顺序比较关键帧，判断动作、节奏和场景变化。</p></div></div>
               <div className="step"><span>03</span><div><strong>反推摄影语言</strong><p>估计景别、机位、光线与可确认的运镜，不强行猜测。</p></div></div>
-              <div className="step"><span>04</span><div><strong>套用 Bible</strong><p>把角色与产品锁定规则写入每个镜头，减少漂移。</p></div></div>
+              <div className="step"><span>04</span><div><strong>套用 Bible</strong><p>按每镜出场资产引用身份与产品资料。</p></div></div>
               <div className="step"><span>05</span><div><strong>编译目标平台 Prompt</strong><p>转换成 Seedance、Kling、Vidu 等可直接使用的语言。</p></div></div>
             </>
           ) : (
             <>
               <div className="step"><span>01</span><div><strong>理解内容</strong><p>找出人物、场景、动作、产品、对白与情绪。</p></div></div>
-              <div className="step"><span>02</span><div><strong>导演拆镜</strong><p>按视觉事件和情绪转折拆镜，而不是机械按句号切。</p></div></div>
-              <div className="step"><span>03</span><div><strong>读取 Bible</strong><p>角色、服装、产品与品牌规则贯穿所有镜头。</p></div></div>
+              <div className="step"><span>02</span><div><strong>导演拆镜</strong><p>云端按视觉事件拆镜；本地规则结果需要人工确认。</p></div></div>
+              <div className="step"><span>03</span><div><strong>读取 Bible</strong><p>每镜选择出场资产，只注入相关固定属性。</p></div></div>
               <div className="step"><span>04</span><div><strong>生成时间轴</strong><p>每镜同时产出时长、首帧、视频 Prompt 与稳定性约束。</p></div></div>
               <div className="step"><span>05</span><div><strong>局部迭代</strong><p>可拖拽排序或单独重生成某个镜头，不必重做整套方案。</p></div></div>
             </>
@@ -1180,6 +1206,26 @@ function App() {
         </aside>
       </section>
 
+      <details className="studio-section shell asset-details" id="assets"><summary>项目角色、产品与图片素材 · 按需要展开</summary>
+      <BiblePanel
+        characters={characters}
+        products={products}
+        onCharactersChange={updateCharacters}
+        onProductsChange={updateProducts}
+      />
+
+      <AssetLibrary
+        assets={assets}
+        characters={characters}
+        products={products}
+        busy={assetBusy}
+        onUpload={(file) => void uploadAsset(file)}
+        onDelete={(assetId) => void removeAsset(assetId)}
+        onBind={bindAsset}
+        onUnbind={unbindAsset}
+      />
+
+      </details>
       {result && (
         <section className="results shell" id="result">
           <div className="result-head">
@@ -1194,7 +1240,7 @@ function App() {
                 <span />
                 {engine === 'ai'
                   ? `AI Director · ${engineModel || 'Responses API'}`
-                  : 'Local Director · 演示回退模式'}
+                  : engine === 'local' ? 'Local Director · 规则拆镜' : '已保存 / 分享方案 · 生成来源未确认'}
               </div>
             </div>
 
@@ -1234,10 +1280,9 @@ function App() {
             </div>
           </div>
 
-          <section className="intent-review card">
-            <h3>结构化导演意图</h3><p>从当前分镜归纳；本地结果为规则推断，请确认主体、动作和摄影意图。复杂度为启发式评审，不代表生成成功率。</p>
-            <div className="intent-grid">{analyzeIntent(result).map(item => <div key={item.label}><strong>{item.label}</strong><ul>{item.values.map(value => <li key={value}>{value}</li>)}</ul></div>)}</div>
-          </section>
+          <div className="intent-summary"><strong>导演意图 · {result.brief?.confirmed ? '已确认' : '待确认'}</strong><p>{result.brief?.message || '核心信息尚未填写'} · {result.brief?.priority || '未指定优先级'}</p><a href="#brief">编辑意图与简报</a></div>
+          <StudioExecution result={result} assets={assets} onChange={changeExecution} />
+          <StudioVersions result={result} onChange={changeExecution} />
           <StoryTimeline
             result={result}
             aiReady={aiReady}
@@ -1274,9 +1319,7 @@ function App() {
                     <div><span>连续性</span><p>{shot.continuity}</p></div>
                   </div>
 
-                  <div className="shot-review"><strong>镜头复杂度：{reviewShot(shot, result.generationMode).level} · {reviewShot(shot, result.generationMode).score}/100</strong>
-                    {reviewShot(shot, result.generationMode).findings.length ? reviewShot(shot, result.generationMode).findings.map(f => <p key={f.code}><b>{f.code}</b> · 依据：{f.evidence}<br />建议：{f.advice}</p>) : <p>当前规则未发现明显冲突，仍需人工复核。</p>}
-                  </div>
+                  <StudioShotEditor shot={shot} result={result} characters={characters} products={products} assets={assets} onChange={patch => editStudioShot(shot.id, patch)} />
                   <ShotEditTools
                     shot={shot}
                     aiReady={aiReady}
@@ -1298,7 +1341,7 @@ function App() {
                     onCopy={copyText}
                   />
                   <PromptBlock
-                    title={`${currentPlatform.short} · ${result.generationMode === 'text-to-video' ? '文生视频' : result.generationMode === 'reference-to-video' ? '参考图生视频' : '图生视频'} Prompt`}
+                    title={`${currentPlatform.short} · ${generationLabels[result.generationMode || 'image-to-video']} Prompt`}
                     value={shot.videoPrompt}
                     copyKey={`video-${shot.id}`}
                     copied={copied}
@@ -1314,7 +1357,7 @@ function App() {
                   )}
 
                   <details>
-                    <summary>负面约束 / 稳定性控制</summary>
+                    <summary>通用稳定性说明 · 按目标入口适配</summary>
                     <p>{shot.negativePrompt}</p>
                   </details>
                 </div>
@@ -1325,8 +1368,8 @@ function App() {
       )}
 
       <footer className="shell footer">
-        <span>FramePilot V1.0</span>
-        <span>Visual Assets + Project Bible + Director + Timeline</span>
+        <span>FramePilot V1.1</span>
+        <span>跨模型导演工作台 · 简报 / 分镜 / 执行 / 复盘</span>
       </footer>
     </main>
   )
@@ -1352,8 +1395,8 @@ function ReferencePreview({
       <div className={reference.kind === 'image' ? 'reference-frames single' : 'reference-frames'}>
         {reference.frames.map((frame, index) => (
           <div className="reference-frame" key={index}>
-            <img src={frame} alt={reference.kind === 'video' ? `关键帧 ${index + 1}` : '参考图'} />
-            {reference.kind === 'video' && <span>{String(index + 1).padStart(2, '0')}</span>}
+            <img src={frame} alt={reference.kind === 'video' ? `关键帧 ${index + 1} · ${reference.timestamps?.[index]?.toFixed(1) || '?'}s` : '参考图'} />
+            {reference.kind === 'video' && <span>{reference.timestamps?.[index]?.toFixed(1) || '?'}s</span>}
           </div>
         ))}
       </div>

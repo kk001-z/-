@@ -1,6 +1,7 @@
+import { defaultExecution, referenceRoles, generationLabels, type CreativeBrief, type ExecutionSettings, type ReferenceRole } from './studio'
 import { PlatformId, platforms } from './modelCatalog'
 
-export type GenerationMode = 'text-to-video' | 'image-to-video' | 'reference-to-video'
+export type GenerationMode = 'text-to-video' | 'image-to-video' | 'reference-to-video' | 'first-last-frame' | 'motion-reference' | 'video-edit'
 
 export type InputMode = 'idea' | 'script'
 
@@ -19,6 +20,17 @@ export interface DirectorShot {
   continuity: string
   dialogue: string
   sound: string
+  purpose?: string
+  startState?: string
+  endState?: string
+  entityIds?: string[]
+  scopedLocks?: string
+  referenceRoles?: Record<string, ReferenceRole>
+  observation?: string
+  inference?: string
+  unknown?: string
+  music?: string
+  feedback?: string
   referenceAssetIds?: string[]
 }
 
@@ -48,6 +60,9 @@ export interface AnalysisResult {
   shots: Shot[]
   generationMode?: GenerationMode
   outputModel?: string
+  brief?: CreativeBrief
+  execution?: ExecutionSettings
+  versions?: { id: string; label: string; createdAt: number; snapshot: Omit<AnalysisResult, 'versions'> }[]
 }
 
 const clean = (text: string) =>
@@ -252,6 +267,7 @@ export function recompileAnalysisResult(
 ): AnalysisResult {
   const platformInfo = platforms.find((item) => item.id === targetPlatform)!
   const shots: DirectorShot[] = result.shots.map((shot) => ({
+    ...shot,
     id: shot.id,
     title: shot.title,
     source: shot.source,
@@ -269,7 +285,7 @@ export function recompileAnalysisResult(
     referenceAssetIds: Array.isArray(shot.referenceAssetIds) ? shot.referenceAssetIds : [],
   }))
 
-  return configureGeneration(compileDirectorPlan(
+  const compiled = compileDirectorPlan(
     {
       title: result.title,
       summary: result.summary,
@@ -280,7 +296,8 @@ export function recompileAnalysisResult(
       shots,
     },
     targetPlatform,
-  ), result.outputModel, result.generationMode)
+  )
+  return configureGeneration({ ...result, ...compiled }, result.outputModel, result.generationMode)
 }
 
 
@@ -350,6 +367,7 @@ export function replaceAnalysisShot(
   const shots = result.shots.map((shot) =>
     shot.id === shotId
       ? {
+          ...shot,
           ...replacement,
           id: shot.id,
           referenceAssetIds:
@@ -449,14 +467,31 @@ export function updateAnalysisShotAssets(
 export function configureGeneration(result: AnalysisResult, model?: string, mode: GenerationMode = 'image-to-video'): AnalysisResult {
   const catalog = platforms.find(p => p.id === result.recommendedPlatform)!
   const outputModel = model && catalog.models.includes(model) ? model : catalog.models[0]
+  const settings = { ...defaultExecution, ...result.execution }
   return { ...result, outputModel, recommendedModel: outputModel, generationMode: mode,
     shots: result.shots.map(shot => {
-      const base = platformPrompt(result.recommendedPlatform, shot)
-      const prompt = mode === 'text-to-video'
-        ? `文生视频：主体外观：${shot.subject}。${base.replace(/图生视频时以首帧为唯一外观基准，只描述动作、物理变化与镜头运动。/g, '')}`
-        : mode === 'reference-to-video'
-        ? `参考图生视频：分别提供已绑定的人物、产品或场景参考图作为外观锚点。${base.replace(/以首帧为唯一外观基准/g, '以提供的参考图为外观基准')}`
-        : `图生视频：先生成并上传本镜首帧，以首帧为外观基准。${base}`
-      return { ...shot, videoPrompt: prompt }
+      const identity = `${shot.subject}；${shot.environment}；${shot.lighting}；${shot.framing}`
+      const movement = `主体动作：${shot.action}。摄影机：${shot.camera}。情绪：${shot.emotion}。起始状态：${shot.startState || '待确认'}。结束状态：${shot.endState || '待确认'}。`
+      const roles = (shot.referenceAssetIds ?? []).map((id, i) => `素材${i + 1}用于${referenceRoles[shot.referenceRoles?.[id] as ReferenceRole] || '待指定用途'}`).join('；')
+      const lock = [shot.continuity, shot.scopedLocks].filter(Boolean).join('；')
+      const prefix: Record<GenerationMode, string> = {
+        'text-to-video': `场景与主体：${identity}。`,
+        'image-to-video': '先生成并上传本镜首帧，以首帧确定起始外观与构图。',
+        'reference-to-video': `按用途提供参考素材：${roles || '尚未绑定素材'}。参考图不自动等于首帧。`,
+        'first-last-frame': `首帧到尾帧之间的过渡；${roles || '需要绑定首尾帧'}。明确中间动作，不将两帧写成瞬间跳变。`,
+        'motion-reference': `动作 / 运镜参考：${settings.motionReference || '待提供参考视频'}。只继承指定运动特征；${settings.preserve || '外观按本镜主体与图片参考保持'}。场景与主体：${identity}。`,
+        'video-edit': `原视频：${settings.sourceVideo || '待提供'}。保留：${settings.preserve || '待确认'}。修改 / 延长内容：${shot.action}。`,
+      }
+      const audio = settings.audio === 'native' ? `对白：${shot.dialogue || '无'}。环境声 / 音效：${shot.sound || '无'}。音乐：${shot.music || '无'}。` : ''
+      const structure = settings.organization === 'multi' ? `镜头 ${shot.id}，约 ${shot.duration}s：` : ''
+      const modelInstruction = outputModel === 'Kling 3.0' && settings.organization === 'multi'
+        ? `以镜头段组织多镜头叙事；每段说明景别、动作及对白说话人。`
+        : outputModel === 'Seedance 2.0' && mode === 'reference-to-video'
+        ? `分别指定各参考的外观、场景或运动用途；避免不同素材同时定义同一属性。`
+        : outputModel === 'Vidu Q3' && mode === 'reference-to-video'
+        ? `明确参考主体与本镜动作之间的对应关系；入口素材标记以实际平台为准。`
+        : ''
+      const prompt = `${modelInstruction}${structure}${generationLabels[mode]}：${prefix[mode]}${movement}光线变化遵循场景设定。时长约 ${shot.duration}s。相关连续性：${lock}。${audio}`
+      return { ...shot, firstFramePrompt: `起始画面：${shot.startState || '待确认具体姿态与物体状态'}。${identity}。为后续“${shot.action}”保留可见动作路径与空间。相关固定属性：${lock}。`, videoPrompt: prompt }
     }) }
 }

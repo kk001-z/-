@@ -19,13 +19,19 @@ jobs:
           node-version: 22
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Test director rules and generation modes
         run: npm test
 
       - name: Build frontend
         run: npm run build
+
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Test workbench interactions
+        run: npm run test:e2e
 
       - name: Smoke test Director API
         run: |

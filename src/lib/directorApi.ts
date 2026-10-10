@@ -21,13 +21,14 @@ export async function analyzeWithDirector(
   platform: PlatformId,
   locks = '',
   referenceImages: string[] = [],
+  creativeContext = '',
 ): Promise<DirectorResponse> {
   try {
     const response = await fetch('/api/director', {
       signal: AbortSignal.timeout(45000),
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ input, mode, platform, locks, referenceImages }),
+      body: JSON.stringify({ input, mode, platform, locks, referenceImages, creativeContext }),
     })
 
     if (response.ok) {
@@ -72,6 +73,7 @@ export async function analyzeReferenceWithDirector(
       width: reference.width,
       height: reference.height,
       images: reference.frames,
+      timestamps: reference.timestamps || [],
       platform,
       context,
       locks,
