@@ -10,6 +10,38 @@ FramePilot 是一个面向中文 AI 视频创作者的 **AI 导演 + 分镜师 +
 
 系统负责把这些输入统一编译成可执行的镜头方案，并转换成小云雀、即梦、可灵、LibTV、Vidu、海螺和 Wan 等平台可直接使用的提示词。
 
+## 公开演示版
+
+当前无需 Vercel / Render 账号即可访问公开演示版：
+
+```
+https://raw.githack.com/kk001-z/-/gh-pages/index.html
+```
+
+公开版由 GitHub Actions 自动构建并发布到 `gh-pages` 分支。每次 `main` 更新后会自动同步。
+
+公开版可用：
+
+- 画面描述 → Local Director
+- 剧本 → Local Director
+- Character / Product Bible
+- 项目参考图本地资产库
+- Storyboard Timeline
+- Shot 时长修改 / 复制 / 删除 / 拖拽排序
+- 多平台 Prompt 本地重新编译
+- Markdown / CSV / JSON 导出
+- 分享网站
+- 分享当前方案链接
+
+公开静态版暂不提供：
+
+- 真正 AI Director
+- 图片视觉反推
+- 视频关键帧 AI 反推
+- 单镜 AI 重生成
+
+这些能力需要 Node/Express 后端和服务端 `OPENAI_API_KEY`。仓库已保留完整生产后端、`server.ts` 与 `render.yaml`，后续接任意 Node 托管平台即可恢复。
+
 ## V0.9 新增
 
 - 生产网页模式
