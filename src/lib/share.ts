@@ -1,6 +1,6 @@
 import type { CreativeBrief } from './studio'
 import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string'
-import type { AnalysisResult } from './promptEngine'
+import type { AnalysisResult, InputMode } from './promptEngine'
 import type { PlatformId } from './modelCatalog'
 import type { CharacterBible, ProductBible } from './projectStore'
 
@@ -10,6 +10,7 @@ export interface ShareSnapshot {
   projectName: string
   platform: PlatformId
   input: string
+  mode?: InputMode | 'reference'
   locks: string
   characters: CharacterBible[]
   products: ProductBible[]

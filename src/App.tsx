@@ -99,6 +99,7 @@ import {
   type RuntimeCapabilities,
 } from './lib/runtime'
 
+import { isWorkspaceSection, revealWorkspaceSection, workspaceSections, type WorkspaceSection } from './lib/workspaceNavigation'
 import StudioVersions from './components/StudioVersions'
 import StudioBrief from './components/StudioBrief'
 import StudioExecution from './components/StudioExecution'
@@ -145,6 +146,8 @@ function App() {
   const [engineModel, setEngineModel] = useState('')
   const [locks, setLocks] = useState('')
   const [notice, setNotice] = useState('')
+  const [activeSection, setActiveSection] = useState<WorkspaceSection>('brief')
+  const inputDrafts = useRef<Record<WorkspaceMode, string>>({ idea: ideaExample, script: scriptExample, reference: '' })
   const [reference, setReference] = useState<PreparedReference | null>(null)
   const [preparingReference, setPreparingReference] = useState(false)
   const [referenceProgress, setReferenceProgress] = useState('')
@@ -200,8 +203,62 @@ function App() {
     [assets, bibleReferenceAssetIds],
   )
 
+  const hasResult = Boolean(result)
   const aiReady = Boolean(runtime?.apiAvailable && runtime.aiConfigured)
   const canRun = mode === 'reference' ? Boolean(reference) && aiReady : Boolean(input.trim())
+
+  function openSharedSnapshot(shared: NonNullable<ReturnType<typeof readShareSnapshot>>) {
+    const project = normalizeProject({ name: shared.projectName, platform: shared.platform, mode: shared.mode, input: shared.input, locks: shared.locks, brief: shared.brief || shared.result?.brief, characters: shared.characters, products: shared.products, result: shared.result })
+    setProjectName(`${project.name} · 分享快照`)
+    setMode(project.mode || 'idea')
+    setPlatform(project.platform)
+    setInput(project.input || ideaExample)
+    setLocks(project.locks)
+    setBrief(normalizeBrief(project.brief))
+    setExecution({ ...defaultExecution, ...project.result?.execution })
+    setOutputModel(project.result?.outputModel || '')
+    setGenerationMode(project.result?.generationMode || 'image-to-video')
+    setCharacters(project.characters)
+    setProducts(project.products)
+    setResult(project.result)
+    setResultHistory([])
+    setEngine(null)
+    setEngineModel('')
+    setAssets([])
+    setReference(null)
+    setProjects(loadProjects())
+    setActiveProjectId('')
+    saveActiveProjectId('')
+    setNotice('已打开分享方案。分享链接不包含本地参考图片，如需继续编辑可保存为自己的项目。')
+  }
+
+  function goToSection(id: WorkspaceSection, updateUrl = true) {
+    if (revealWorkspaceSection(id, updateUrl)) setActiveSection(id)
+  }
+
+  useEffect(() => {
+    if (!hydrated) return
+    let frame = 0
+    const followHash = () => {
+      cancelAnimationFrame(frame)
+      if (window.location.hash.startsWith('#share=')) {
+        const shared = readShareSnapshot()
+        if (shared) openSharedSnapshot(shared)
+        else setNotice('分享链接无法读取，请确认链接完整，或使用项目 JSON 导入。')
+        return
+      }
+      const id = window.location.hash.slice(1)
+      if (isWorkspaceSection(id)) frame = requestAnimationFrame(() => goToSection(id, false))
+    }
+    followHash()
+    window.addEventListener('hashchange', followHash)
+    window.addEventListener('popstate', followHash)
+    return () => { cancelAnimationFrame(frame); window.removeEventListener('hashchange', followHash); window.removeEventListener('popstate', followHash) }
+  }, [hydrated, hasResult])
+
+  async function performAction(action: () => Promise<unknown>) {
+    try { await action() } catch { setNotice('操作未完成：浏览器可能拒绝了复制或分享权限。可使用导出文件保存内容，或允许权限后重试。') }
+  }
 
   useEffect(() => {
     void detectRuntimeCapabilities().then(setRuntime)
@@ -209,28 +266,7 @@ function App() {
     try {
       const shared = readShareSnapshot()
       if (shared) {
-        const normalizedShared = normalizeProject({
-          name: shared.projectName,
-          platform: shared.platform,
-          input: shared.input,
-          brief: shared.brief || shared.result?.brief,
-          locks: shared.locks,
-          characters: shared.characters,
-          products: shared.products,
-          result: shared.result,
-        })
-        setBrief(normalizeBrief(normalizedShared.brief))
-        setExecution({ ...defaultExecution, ...shared.result?.execution })
-        setProjectName(`${normalizedShared.name} · 分享快照`)
-        setPlatform(normalizedShared.platform)
-        setInput(normalizedShared.input || ideaExample)
-        setLocks(normalizedShared.locks)
-        setCharacters(normalizedShared.characters)
-        setProducts(normalizedShared.products)
-        setResult(normalizedShared.result)
-        setEngine(null)
-        setAssets([])
-        setNotice('已打开分享方案。分享链接不包含本地参考图片，如需继续编辑可保存为自己的项目。')
+        openSharedSnapshot(shared)
         setHydrated(true)
         return
       }
@@ -342,6 +378,7 @@ function App() {
     saveActiveProjectId(project.id)
     setProjectName(project.name)
     setPlatform(project.platform)
+    setMode(project.mode || 'idea')
     setBrief(normalizeBrief(project.brief || project.result?.brief))
     setExecution({ ...defaultExecution, ...project.result?.execution })
     setOutputModel(project.result?.outputModel || '')
@@ -367,6 +404,7 @@ function App() {
       ...createProject(projectName.trim() || '未命名项目'),
       platform,
       input,
+      mode,
       brief,
       locks,
       characters,
@@ -392,6 +430,7 @@ function App() {
       updatedAt: now,
       platform,
       input,
+      mode,
       brief,
       locks,
       characters,
@@ -520,7 +559,7 @@ function App() {
       setEngine(response.engine)
       setEngineModel(response.model ?? '')
       setNotice([response.notice, !brief.confirmed ? '导演意图尚未确认，可在创作简报中补充后继续编辑。' : ''].filter(Boolean).join(' '))
-      setTimeout(() => document.getElementById('result')?.scrollIntoView({ behavior: 'smooth' }), 80)
+      requestAnimationFrame(() => goToSection('result'))
     } catch (error) {
       setResult(null)
       setEngine(null)
@@ -714,6 +753,7 @@ function App() {
       projectName,
       platform,
       input,
+      mode,
       brief,
       locks,
       characters,
@@ -792,6 +832,7 @@ function App() {
           project: {
             name: projectName,
             platform,
+            mode,
             manualLocks: locks,
             bibleLocks,
             characters,
@@ -814,6 +855,7 @@ function App() {
         project?: {
           name?: string
           platform?: PlatformId
+          mode?: WorkspaceMode
           manualLocks?: string
           locks?: string
           characters?: CharacterBible[]
@@ -833,6 +875,7 @@ function App() {
         platform: bundle.project?.platform || defaultPlatform,
         input: '',
         locks: bundle.project?.manualLocks || bundle.project?.locks || '',
+        mode: bundle.project?.mode,
         characters: bundle.project?.characters || [],
         products: bundle.project?.products || [],
         result: bundle.storyboard || null,
@@ -873,15 +916,16 @@ function App() {
   }
 
   function changeMode(next: WorkspaceMode) {
+    if (next === mode) return
+    inputDrafts.current[mode] = input
     setMode(next)
     setResult(null)
     setResultHistory([])
     setEngine(null)
     setNotice('')
 
-    if (next === 'idea') setInput(ideaExample)
-    if (next === 'script') setInput(scriptExample)
-    if (next === 'reference') setInput('')
+    setInput(inputDrafts.current[next])
+    setNotice('已切换输入方式。输入草稿会在本次会话中保留；请重新分析生成此模式的分镜。')
   }
 
   function updateLocks(value: string) {
@@ -953,6 +997,7 @@ function App() {
 
   return (
     <main>
+      {notice && <div className="action-feedback" role="alert"><p>{notice}</p><button aria-label="关闭操作提示" onClick={() => setNotice('')}><X size={16} /></button></div>}
       <header className="topbar">
         <div className="brand">
           <div className="brand-mark"><Clapperboard size={18} /></div>
@@ -961,7 +1006,7 @@ function App() {
         </div>
         <div className="topbar-actions">
           <div className="nav-note">创作简报 · 导演分镜 · 生成执行</div>
-          <button className="share-site-button" onClick={() => void shareWebsite()}>
+          <button className="share-site-button" onClick={() => void performAction(shareWebsite)}>
             <Share2 size={14} /> 分享网站
           </button>
         </div>
@@ -998,7 +1043,7 @@ function App() {
         <p className="hero-copy">确认导演意图，编辑动作与起止状态，按素材和模型入口选择路线。每一镜都有执行条件、提示词与复盘记录。</p>
       </section>
 
-      <nav className="workflow-nav shell" aria-label="工作台步骤"><a href="#brief">创作简报</a><a href="#composer">内容输入</a><a href="#result">导演分镜</a><a href="#execution">生成执行</a></nav>
+      <nav className="workflow-nav shell" aria-label="工作台步骤">{workspaceSections.map(section => <a key={section.id} href={`#${section.id}`} aria-current={activeSection === section.id ? 'location' : undefined} onClick={event => { event.preventDefault(); goToSection(section.id) }}>{section.label}</a>)}</nav>
       <StudioBrief value={brief} onChange={changeBrief} />
       <div className="shell notice" role="status">{!runtime ? '正在检测云端 AI 状态…' : aiReady ? `云端 AI 已配置 · 导演分析模型：${runtime.model || '服务端配置'}（请求失败时文本会回退本地）` : runtime.apiAvailable ? '后端在线，云端 AI 未配置 · 文本使用本地规则；视觉反推与重生成不可用' : '静态演示 / 后端不可达 · 文本使用本地规则；视觉反推与重生成不可用'}</div>
       <section className="workspace shell" id="composer">
@@ -1177,7 +1222,8 @@ function App() {
               : '文本模式支持本地回退；图片 / 视频反推、单镜重生成需要视觉 / 文本 AI。项目与资产库保存在当前浏览器。'}
           </div>
 
-          {notice && !result && <div className="notice composer-notice">{notice}</div>}
+          {mode === 'reference' && !aiReady && <div className="cloud-requirement"><strong>{!runtime ? '正在检测云端状态' : '视觉反推暂不可用'}</strong><p>视觉反推需要已配置的云端 AI。当前仍可本地读取素材、上传项目参考图，或使用画面 / 剧本拆镜。</p><button className="studio-button" onClick={() => goToSection('assets')}>打开项目素材库</button></div>}
+          {!canRun && mode !== 'reference' && <p className="unavailable-reason">请输入画面或剧本后再开始分析。</p>}
         </div>
 
         <aside className="side card">
@@ -1226,7 +1272,7 @@ function App() {
       />
 
       </details>
-      {result && (
+      {result ? (
         <section className="results shell" id="result">
           <div className="result-head">
             <div>
@@ -1251,14 +1297,14 @@ function App() {
                 <span>{result.recommendedModel}</span>
               </div>
               <div className="export-actions">
-                <button className="share-project-button" onClick={() => void shareCurrentProject()}>
+                <button className="share-project-button" onClick={() => void performAction(shareCurrentProject)}>
                   <Share2 size={14} />
                   {shareState ? '链接已生成' : '分享当前方案'}
                 </button>
                 <button onClick={undoStoryboardChange} disabled={!resultHistory.length}>
                   撤销{resultHistory.length ? ` (${resultHistory.length})` : ''}
                 </button>
-                <button onClick={copyAllPrompts}>
+                <button onClick={() => void performAction(copyAllPrompts)}>
                   {copied === 'all' ? <Check size={14} /> : <ClipboardCopy size={14} />}
                   {copied === 'all' ? '已复制' : '复制全部'}
                 </button>
@@ -1269,7 +1315,6 @@ function App() {
             </div>
           </div>
 
-          {notice && <div className="notice">{notice}</div>}
 
           <div className="recommendation">
             <div className="recommend-icon"><Play size={18} /></div>
@@ -1280,7 +1325,7 @@ function App() {
             </div>
           </div>
 
-          <div className="intent-summary"><strong>导演意图 · {result.brief?.confirmed ? '已确认' : '待确认'}</strong><p>{result.brief?.message || '核心信息尚未填写'} · {result.brief?.priority || '未指定优先级'}</p><a href="#brief">编辑意图与简报</a></div>
+          <div className="intent-summary"><strong>导演意图 · {result.brief?.confirmed ? '已确认' : '待确认'}</strong><p>{result.brief?.message || '核心信息尚未填写'} · {result.brief?.priority || '未指定优先级'}</p><a href="#brief" onClick={event => { event.preventDefault(); goToSection('brief') }}>编辑意图与简报</a></div>
           <StudioExecution result={result} assets={assets} onChange={changeExecution} />
           <StudioVersions result={result} onChange={changeExecution} />
           <StoryTimeline
@@ -1325,6 +1370,8 @@ function App() {
                     aiReady={aiReady}
                     assets={assets}
                     busy={regeneratingShotId === shot.id}
+                    blocked={loading || regeneratingShotId !== null}
+                    canDuplicate={result.shots.length < 20}
                     canDelete={result.shots.length > 1}
                     onRegenerate={(targetShot, instruction) => void regenerateShot(targetShot, instruction)}
                     onDuplicate={duplicateShot}
@@ -1338,14 +1385,14 @@ function App() {
                     value={shot.firstFramePrompt}
                     copyKey={`frame-${shot.id}`}
                     copied={copied}
-                    onCopy={copyText}
+                    onCopy={(key, value) => void performAction(() => copyText(key, value))}
                   />
                   <PromptBlock
                     title={`${currentPlatform.short} · ${generationLabels[result.generationMode || 'image-to-video']} Prompt`}
                     value={shot.videoPrompt}
                     copyKey={`video-${shot.id}`}
                     copied={copied}
-                    onCopy={copyText}
+                    onCopy={(key, value) => void performAction(() => copyText(key, value))}
                     accent
                   />
 
@@ -1365,6 +1412,12 @@ function App() {
             ))}
           </div>
         </section>
+      ) : (
+        <div className="shell pending-workspace">
+          <section id="result" className="studio-section pending-section"><h2>导演分镜</h2><p>还没有分镜方案。输入画面或剧本后，运行本地拆镜即可开始编辑，无需云端 AI。</p><button className="studio-button" onClick={() => goToSection('composer')}>前往内容输入</button></section>
+          <section id="execution" className="studio-section pending-section"><h2>生成执行</h2><p>先生成分镜，再选择路线、配置素材并导出执行包。</p><button className="studio-button" onClick={() => goToSection('composer')}>先生成分镜方案</button></section>
+          <section id="versions" className="studio-section pending-section"><h2>版本复盘</h2><p>生成分镜后，可保存版本、对比修改并恢复方案。</p><button className="studio-button" onClick={() => goToSection('composer')}>开始创建方案</button></section>
+        </div>
       )}
 
       <footer className="shell footer">

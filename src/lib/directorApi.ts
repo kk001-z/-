@@ -64,6 +64,7 @@ export async function analyzeReferenceWithDirector(
   lockedReferenceImages: string[] = [],
 ): Promise<DirectorResponse> {
   const response = await fetch('/api/reverse', {
+    signal: AbortSignal.timeout(60000),
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -113,6 +114,7 @@ export async function regenerateShotWithDirector(
   referenceImages: string[] = [],
 ): Promise<{ shot: Shot; model?: string }> {
   const response = await fetch('/api/shot/regenerate', {
+    signal: AbortSignal.timeout(60000),
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

@@ -6,6 +6,8 @@ import ShotReferencePicker from './ShotReferencePicker'
 
 interface Props {
   aiReady: boolean
+  blocked: boolean
+  canDuplicate: boolean
   shot: Shot
   assets: ProjectAsset[]
   busy: boolean
@@ -19,6 +21,8 @@ interface Props {
 
 export default function ShotEditTools({
   aiReady,
+  blocked,
+  canDuplicate,
   shot,
   assets,
   busy,
@@ -46,7 +50,7 @@ export default function ShotEditTools({
           <small>s</small>
         </label>
 
-        <button onClick={() => onDuplicate(shot.id)} title="复制这个镜头">
+        <button onClick={() => onDuplicate(shot.id)} disabled={!canDuplicate} title={canDuplicate ? '复制这个镜头' : '已达到 20 镜头上限'}>
           <CopyPlus size={13} /> 复制
         </button>
 
@@ -74,12 +78,13 @@ export default function ShotEditTools({
         />
         <button
           onClick={() => onRegenerate(shot, instruction)}
-          disabled={busy || !aiReady}
+          disabled={busy || blocked || !aiReady}
         >
           <RefreshCw size={13} className={busy ? 'spin' : ''} />
           {busy ? '重生成中' : aiReady ? '按要求重生成' : '云端 AI 未就绪'}
         </button>
       </div>
+      {!aiReady && <p className="unavailable-reason">云端 AI 未配置，单镜重生成暂不可用。上方导演字段仍可直接编辑并重新编译。</p>}
     </div>
   )
 }

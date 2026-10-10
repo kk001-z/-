@@ -83,3 +83,121 @@ test('cloud failure falls back using the original script only', async ({ page })
   await expect(page.locator('.shot-card')).toHaveCount(1)
   await expect(page.locator('.engine-status')).toContainText('Local Director')
 })
+
+for (const width of [1440, 390]) {
+  test(`all section links navigate before and after analysis at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.goto('/')
+    const sections = ['brief', 'composer', 'assets', 'result', 'execution', 'versions']
+    for (const id of sections) {
+      await page.locator(`.workflow-nav a[href="#${id}"]`).click()
+      await expect(page).toHaveURL(new RegExp(`#${id}$`))
+      await expect(page.locator(`#${id}`)).toBeFocused()
+      expect(await page.locator(`#${id}`).evaluate(el => el.getBoundingClientRect().top)).toBeGreaterThanOrEqual(68)
+    }
+    await expect(page.locator('#assets')).toHaveAttribute('open', '')
+    await page.getByRole('button', { name: '开始创建方案' }).click()
+    await expect(page).toHaveURL(/#composer$/)
+    await createPlan(page)
+    for (const id of sections) {
+      await page.locator(`.workflow-nav a[href="#${id}"]`).click()
+      await expect(page.locator(`#${id}`)).toBeFocused()
+    }
+    await expect(page.locator('#versions')).toHaveAttribute('open', '')
+    await expect(page.getByLabel('版本名称')).toBeVisible()
+    await page.reload()
+    await expect(page.locator('#versions')).toHaveAttribute('open', '')
+    await expect(page.locator('#versions')).toBeFocused()
+  })
+}
+
+test('direct empty section links and browser history work', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.goto('/#execution')
+  await expect(page.locator('#execution')).toBeFocused()
+  await expect(page.getByRole('button', { name: '先生成分镜方案' })).toBeVisible()
+  await page.getByRole('button', { name: '先生成分镜方案' }).click()
+  await expect(page).toHaveURL(/#composer$/)
+  await page.goBack()
+  await expect(page).toHaveURL(/#execution$/)
+  await expect(page.locator('#execution')).toBeFocused()
+})
+
+test('same input tab preserves result and draft switching preserves text', async ({ page }) => {
+  await createPlan(page)
+  await page.getByRole('button', { name: '我有一段剧本' }).click()
+  await expect(page.locator('.shot-card')).toHaveCount(1)
+  await page.locator('#composer textarea').first().fill('我的剧本草稿')
+  await page.getByRole('button', { name: '我有一个画面' }).click()
+  await page.locator('#composer textarea').first().fill('我的画面草稿')
+  await page.getByRole('button', { name: '我有一段剧本' }).click()
+  await expect(page.locator('#composer textarea').first()).toHaveValue('我的剧本草稿')
+  await page.getByRole('button', { name: '我有一个画面' }).click()
+  await expect(page.locator('#composer textarea').first()).toHaveValue('我的画面草稿')
+})
+
+test('clipboard denial produces visible feedback, not an unhandled error', async ({ page }) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message))
+  await page.addInitScript(() => Object.defineProperty(navigator, 'clipboard', { value: { writeText: () => Promise.reject(new Error('permission denied')) }, configurable: true }))
+  await createPlan(page)
+  await page.getByRole('button', { name: '复制全部', exact: true }).click()
+  await expect(page.getByRole('alert')).toContainText('操作未完成')
+  await expect(page.getByRole('alert')).toBeInViewport()
+  await page.getByRole('button', { name: '关闭操作提示' }).click()
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  await page.getByRole('button', { name: '分享当前方案' }).click()
+  await expect(page.getByRole('alert')).toContainText('操作未完成')
+  expect(errors).toEqual([])
+})
+
+test('shot controls and all export formats perform real actions', async ({ page }) => {
+  await createPlan(page)
+  await page.locator('.shot-edit-row').getByRole('button', { name: '复制', exact: true }).click()
+  await expect(page.locator('.shot-card')).toHaveCount(2)
+  await page.locator('.shot-edit-row input').first().fill('8')
+  await expect(page.locator('.timeline-head')).toContainText('11s')
+  await page.locator('.shot-edit-row').first().getByRole('button', { name: '删除', exact: true }).click()
+  await expect(page.locator('.shot-card')).toHaveCount(1)
+  await expect(page.locator('.shot-edit-row').getByRole('button', { name: '删除', exact: true })).toBeDisabled()
+  for (const name of ['导出 MD', '导出 CSV', '导出项目 JSON', '导出生成执行包']) {
+    const downloadPromise = page.waitForEvent('download')
+    await page.getByRole('button', { name, exact: true }).click()
+    const download = await downloadPromise
+    expect((await readFile((await download.path())!, 'utf8')).length).toBeGreaterThan(20)
+  }
+  await page.getByRole('button', { name: '保存项目', exact: true }).click()
+  await expect(page.getByRole('alert')).toContainText('已保存')
+})
+
+test('project create, switch and delete preserve saved plans', async ({ page }) => {
+  await createPlan(page)
+  await page.getByRole('button', { name: '保存项目', exact: true }).click()
+  const savedId = await page.getByLabel('切换项目').inputValue()
+  await page.getByRole('button', { name: '新建', exact: true }).click()
+  await expect(page.locator('.shot-card')).toHaveCount(0)
+  await expect(page.locator('#result')).toContainText('还没有分镜方案')
+  const newId = await page.getByLabel('切换项目').inputValue()
+  await page.getByLabel('切换项目').selectOption(savedId)
+  await expect(page.locator('.shot-card')).toHaveCount(1)
+  await expect(page.getByRole('button', { name: '我有一段剧本' })).toHaveClass(/active/)
+  await page.getByLabel('切换项目').selectOption(newId)
+  await page.getByRole('button', { name: '删除当前项目' }).click()
+  await expect(page.locator('.shot-card')).toHaveCount(1)
+  await expect(page.getByLabel('切换项目').locator('option')).toHaveCount(1)
+})
+
+test('copy and scheme sharing return usable text snapshots', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  await createPlan(page)
+  await page.getByRole('button', { name: '复制全部', exact: true }).click()
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain('SHOT 01')
+  await page.getByRole('button', { name: '分享当前方案' }).click()
+  const link = await page.evaluate(() => navigator.clipboard.readText())
+  expect(link).toContain('#share=')
+  await page.goto(link)
+  await expect(page.locator('.shot-card')).toHaveCount(1)
+  await expect(page.getByRole('alert')).toContainText('已打开分享方案')
+  await page.locator('.workflow-nav a[href="#execution"]').click()
+  await expect(page.locator('#execution')).toBeFocused()
+})
